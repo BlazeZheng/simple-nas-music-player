@@ -6,7 +6,7 @@
 ## The Origin of This Music Player
 I often listen to music while working, both at the office and at home. However, with such a large collection of songs, I had to store a copy on my work computer and another on my home computer. After setting up my home NAS, I’ve been wanting to host my music library on the NAS and use a web-based player to listen to my songs. I tried many options, but none quite fit my needs. My requirements are simple: shuffle play and lyrics/cover scraping. So, I decided to create a simple player myself. In just half a day, this project came to life—made for personal use, purely as a hobby programming endeavor.
 
-
+![image](https://github.com/BlazeZheng/simple-nas-music-player/blob/main/%E5%85%89%E8%BE%89%E6%92%AD%E6%94%BE%E5%99%A8.png)
 
 [English](#-english) | [中文](#-中文说明)
 
@@ -94,3 +94,4 @@ docker run -d \
 ### 🤝 致谢
 - 歌词与封面 API 由 Lrc.cx 提供支持。
 - 图标库使用 RemixIcon。
+
