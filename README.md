@@ -1,158 +1,96 @@
-code
+# Simple NAS Music Player (光辉永恒播放器)
 
-Markdown
+## 关于这个音乐播放器的由来
+我在单位和家里工作时经常会开播放器听歌，但是收集的歌曲太多，导致单位电脑要存一份，家里电脑还要存一份，自从搭建的家里的NAS环境后就一直想把歌曲放在NAS上面用网页版播放器听歌。找了很多款都不太适合我的需求，我要求很简单，随机播放、歌词封面刮削，就这两个，于是决定自己动手写一个简单的播放器，用了半天的时间就有了下面这个项目，个人使用，纯娱乐编程。
 
-\# Simple NAS Music Player (光辉永恒播放器)
-
-
-
-\[English](#english) | \[中文](#chinese)
+## The Origin of This Music Player
+I often listen to music while working, both at the office and at home. However, with such a large collection of songs, I had to store a copy on my work computer and another on my home computer. After setting up my home NAS, I’ve been wanting to host my music library on the NAS and use a web-based player to listen to my songs. I tried many options, but none quite fit my needs. My requirements are simple: shuffle play and lyrics/cover scraping. So, I decided to create a simple player myself. In just half a day, this project came to life—made for personal use, purely as a hobby programming endeavor.
 
 
 
-<a name="english"></a>
+[English](#-english) | [中文](#-中文说明)
 
-\## 🇬🇧 English
+<a name="-english"></a>
+## 🇬🇧 English
 
+A lightweight, modern, and aesthetically pleasing web-based music player designed for NAS (Network Attached Storage). Built with **FastAPI** (Backend) and **Vue 3** (Frontend), it features a beautiful UI, automatic background metadata scraping, and requires **NO database** setup.
 
+### ✨ Features
+- **Zero Configuration**: No MySQL/Redis required. Just point it to your music folder.
+- **Modern UI**: Built with Tailwind CSS. Features glassmorphism design, vinyl rotation animations, and responsive layout.
+- **Background Scraping**: Automatically fetches lyrics and cover art from `lrc.cx` in the background without blocking the UI.
+- **Local Priority**: Prioritizes embedded ID3 tags and local lyrics files (`.lrc`).
+- **Playback Controls**: Supports Loop (List/Single), Shuffle, and Media Session API.
+- **Mobile Friendly**: Works perfectly on mobile browsers as a web app.
 
-A lightweight, modern, and aesthetically pleasing web-based music player designed for NAS (Network Attached Storage). Built with \*\*FastAPI\*\* and \*\*Vue 3\*\*, it features a beautiful UI, automatic background metadata scraping, and requires no database setup.
-
-
-
-\### Features
-
-\- \*\*Zero Configuration\*\*: No database required. Just point it to your music folder.
-
-\- \*\*Modern UI\*\*: Built with Vue 3 + Tailwind CSS. Features glassmorphism design, vinyl rotation animations, and responsive layout.
-
-\- \*\*Background Scraping\*\*: Automatically fetches lyrics and cover art from `lrc.cx` in the background without blocking the UI.
-
-\- \*\*Local Priority\*\*: Prioritizes embedded ID3 tags and local lyrics files.
-
-\- \*\*Playback Controls\*\*: Supports Loop (List/Single), Shuffle, and Keyboard controls.
-
-\- \*\*Mobile Friendly\*\*: Works perfectly on mobile browsers.
-
-
-
-\### Installation (Docker)
-
-
+### 🚀 Quick Start (Docker)
 
 You can easily run this player using Docker.
 
+#### 1. Clone the repository
+Download the source code to your NAS or server.
 
-
-\#### 1. Directory Structure
-
-Ensure you have a music directory on your host (e.g., `/volume1/music`).
-
-
-
-\#### 2. Run with Docker CLI
+#### 2. Run with Docker
+Replace `/path/to/your/music` with your actual music folder path.
 
 ```bash
-
-docker run -d \\
-
-&nbsp; --name nas-player \\
-
-&nbsp; --restart unless-stopped \\
-
-&nbsp; -p 8000:8000 \\
-
-&nbsp; -v /path/to/your/music:/music \\
-
-&nbsp; -v ./cache:/app/cache \\
-
-&nbsp; ghplayer/simple-nas-player
-
-Note: The metadata (lyrics/covers) will be saved in the mapped /app/cache directory.
-
-API Usage
-
-Cover Art API: GET /api/cover?path=...
-
-Stream API: GET /api/stream?path=...
-
-Credits
-
-Lyrics and Cover Art API provided by Lrc.cx.
-
-Frontend Icons by RemixIcon.
-
-<a name="chinese"></a>
-
-🇨🇳 中文说明
-
-一款专为 NAS 设计的轻量级、高颜值网页音乐播放器。使用 FastAPI (后端) 和 Vue 3 (前端) 开发。它拥有现代化的界面设计，支持后台自动刮削元数据，且无需复杂的数据库配置，开箱即用。
-
-主要功能
-
-零配置: 不需要安装 MySQL 或 Redis，读取文件目录即可播放。
-
-高颜值界面: 使用 Tailwind CSS 打造的磨砂玻璃质感 UI，带有黑胶唱片旋转动画。
-
-后台刮削: 后台静默调用 lrc.cx API 获取歌词和封面，不卡顿前端界面。
-
-本地优先: 优先读取音乐文件内嵌的封面和 Tag 信息，以及同名 .lrc 文件。
-
-播放控制: 支持列表循环、单曲循环、随机播放。
-
-移动端适配: 完美支持手机浏览器访问。
-
-安装方法 (Docker)
-
-推荐使用 Docker 进行部署。
-
-1\. 准备目录
-
-确保你有一个存放音乐的文件夹（例如群晖的 /volume1/music）。
-
-2\. 运行命令
-
-你可以直接构建镜像或者使用 Python 容器挂载运行：
-
-code
-
-Bash
-
-docker run -d \\
-
-&nbsp; --name nas-player \\
-
-&nbsp; --restart unless-stopped \\
-
-&nbsp; -p 8000:8000 \\
-
-&nbsp; -v /你的音乐目录:/music \\
-
-&nbsp; -v /你的缓存目录/cache:/app/cache \\
-
-&nbsp; python:3.9-slim \\
-
-&nbsp; /bin/bash -c "pip install fastapi uvicorn mutagen requests aiofiles python-multipart \&\& uvicorn main:app --host 0.0.0.0 --port 8000"
-
-注意：程序会自动在挂载的 cache 目录下生成 lyrics 和 covers 文件夹用于存储刮削的数据。
-
-技术栈
-
-Backend: Python FastAPI
-
-Frontend: Vue.js 3 (CDN), Tailwind CSS
-
-Audio Decoding: Mutagen
-
-致谢
-
-歌词与封面 API 由 Lrc.cx 提供支持。
-
-图标库使用 RemixIcon。
-
-code
-
-Code
+docker run -d \
+  --name nas-player \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v /path/to/your/music:/music \
+  -v $(pwd):/app \
+  python:3.9-slim \
+  /bin/bash -c "pip install -r /app/requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+```
+### 🛠 Tech Stack
+- Backend: Python FastAPI, Uvicorn
+- Frontend: Vue.js 3, Tailwind CSS
+- Audio Processing: Mutagen
+- Networking: Requests
+### 📡 API Usage
+- Stream: GET /api/stream?path=...
+- Cover Art: GET /api/cover?path=...
+- Metadata: GET /api/songs
 
 ---
 
+<a name="-中文说明"></a>
+## 🇨🇳 中文说明
+
+一款专为 NAS 设计的轻量级、高颜值网页音乐播放器。使用 FastAPI 和 Vue 3 开发。它拥有现代化的界面设计，支持后台自动刮削元数据，且无需复杂的数据库配置，开箱即用。
+
+###✨ 主要功能
+- 零配置: 不需要安装 MySQL 或 Redis，直接读取文件目录即可播放。
+- 高颜值界面: 使用 Tailwind CSS 打造的磨砂玻璃质感 UI，带有黑胶唱片旋转动画。
+- 后台刮削: 播放器会在后台静默调用 lrc.cx API 获取缺失的歌词和封面，完全不卡顿前端界面。
+- 本地优先: 优先读取音乐文件内嵌的封面和 Tag 信息，以及同目录下的 .lrc 歌词文件。
+- 播放控制: 支持列表循环、单曲循环、随机播放、音量控制。
+- 移动端适配: 完美支持手机浏览器访问。
+
+### 🚀 安装方法 (Docker)
+推荐使用 Docker 进行部署，无需配置 Python 环境。
+#### 1. 下载代码
+将本项目代码下载到你的 NAS 或服务器文件夹中。
+#### 2. 运行命令
+进入代码所在目录，执行以下命令（请将 /volume1/music 替换为你实际的音乐文件夹路径）：
+
+```bash
+docker run -d \
+  --name nas-player \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v /volume1/music:/music \
+  -v $(pwd):/app \
+  python:3.9-slim \
+  /bin/bash -c "pip install -r /app/requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+```
+注意：首次启动时，程序会自动在代码目录下的 cache 文件夹中生成 lyrics 和 covers 目录，用于存储刮削的数据。
+### 🛠 技术栈
+- 后端: Python FastAPI
+- 前端: Vue.js 3 (CDN引入), Tailwind CSS
+- 音频处理: Mutagen
+- 网络请求: Requests
+### 🤝 致谢
+- 歌词与封面 API 由 Lrc.cx 提供支持。
+- 图标库使用 RemixIcon。
