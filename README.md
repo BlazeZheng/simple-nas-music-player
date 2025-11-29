@@ -31,8 +31,7 @@ You can easily run this player using Docker.
 Download the source code to your NAS or server.
 
 #### 2. Run with Docker
-Replace `/volume1/music` with your actual music folder path.
-Replace`/volume1/ghplayer/app` with your actual app folder path.
+Replace `/volume1/music` `/volume1/blazeplayer/app` with your actual music & code folder path.
 
 ```bash
 docker run -d \
@@ -40,7 +39,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v /volume1/music:/music \
-  -v /volume1/ghplayer/app:/app \
+  -v /volume1/blazeplayer/app:/app \
   python:3.9-slim \
   /bin/bash /app/start.sh
 ```
@@ -82,7 +81,7 @@ docker run -d \
 #### 1. 下载代码
 将本项目代码下载到你的 NAS 或服务器文件夹中。
 #### 2. 运行命令
-进入代码所在目录，执行以下命令（请将 /volume1/music 替换为你实际的音乐文件夹路径）：
+进入代码所在目录，执行以下命令（请将 `/volume1/music` `/volume1/blazeplayer/app` 替换为你实际的音乐和代码文件夹路径）：
 
 ```bash
 docker run -d \
@@ -90,7 +89,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v /volume1/music:/music \
-  -v /volume1/ghplayer/app:/app \
+  -v /volume1/blazeplayer/app:/app \
   python:3.9-slim \
   /bin/bash /app/start.sh
 ```
@@ -110,6 +109,7 @@ docker run -d \
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
