@@ -12,6 +12,7 @@ import mutagen
 from pydantic import BaseModel
 from typing import List, Optional
 from io import BytesIO
+from pypinyin import lazy_pinyin, Style
 
 app = FastAPI()
 
@@ -40,7 +41,11 @@ class Song(BaseModel):
     size: str = "0 MB"
     has_cover: bool = False
     lyrics: str = "" 
-    scraped: bool = False # 标记是否已经完成刮削
+    scraped: bool = False
+    # 新增首字母字段
+    title_initial: Optional[str] = ""
+    artist_initial: Optional[str] = ""
+    album_initial: Optional[str] = ""
 
 # --- 工具函数 ---
 def get_cache_filename(artist, title):
@@ -54,6 +59,29 @@ def get_file_size_mb(path):
         return f"{size / (1024 * 1024):.2f} MB"
     except:
         return "Unknown"
+
+def get_initials(text: str) -> str:
+    """获取文本的首字母"""
+    if not text or text.strip() == "":
+        return "#"
+    
+    # 处理中文转拼音首字母
+    try:
+        # 获取拼音首字母
+        initials = lazy_pinyin(
+            text, 
+            style=Style.FIRST_LETTER,
+            strict=False
+        )
+        # 连接首字母并转为大写
+        result = "".join(initials).upper()
+        # 确保只返回字母，非字母字符返回 #
+        if result and result[0].isalpha():
+            return result[0]
+        else:
+            return "#"
+    except:
+        return "#"
 
 # --- 新 API 刮削逻辑 (api.lrc.cx) ---
 def scrape_metadata_background(songs_list):
@@ -132,60 +160,84 @@ def get_songs():
         for file in files:
             if file.lower().endswith(('.mp3', '.flac', '.m4a')):
                 full_path = os.path.join(root, file)
-                song_info = Song(path=full_path, filename=file, title=os.path.splitext(file)[0])
+                # 使用文件名作为默认标题
+                default_title = os.path.splitext(file)[0]
+                song_info = Song(
+                    path=full_path, 
+                    filename=file, 
+                    title=default_title,
+                    # 初始化首字母字段
+                    title_initial=get_initials(default_title),
+                    artist_initial="#",
+                    album_initial="#"
+                )
                 
                 try:
                     song_info.size = get_file_size_mb(full_path)
                     try:
                         audio = mutagen.File(full_path)
                         if audio:
-                            if 'TIT2' in audio: song_info.title = str(audio['TIT2'])
-                            elif 'title' in audio: song_info.title = str(audio['title'][0])
+                            # 读取元数据
+                            if 'TIT2' in audio: 
+                                song_info.title = str(audio['TIT2'])
+                            elif 'title' in audio: 
+                                song_info.title = str(audio['title'][0])
                             
-                            if 'TPE1' in audio: song_info.artist = str(audio['TPE1'])
-                            elif 'artist' in audio: song_info.artist = str(audio['artist'][0])
+                            if 'TPE1' in audio: 
+                                song_info.artist = str(audio['TPE1'])
+                            elif 'artist' in audio: 
+                                song_info.artist = str(audio['artist'][0])
                             
-                            if 'TALB' in audio: song_info.album = str(audio['TALB'])
-                            elif 'album' in audio: song_info.album = str(audio['album'][0])
+                            if 'TALB' in audio: 
+                                song_info.album = str(audio['TALB'])
+                            elif 'album' in audio: 
+                                song_info.album = str(audio['album'][0])
+
+                            # 计算首字母
+                            song_info.title_initial = get_initials(song_info.title)
+                            song_info.artist_initial = get_initials(song_info.artist)
+                            song_info.album_initial = get_initials(song_info.album)
 
                             # 检查内嵌封面
                             if hasattr(audio, 'tags'):
-                                if 'APIC:' in audio.tags or 'APIC' in audio.tags: song_info.has_cover = True
-                                elif 'covr' in audio.tags: song_info.has_cover = True
-                                elif hasattr(audio, 'pictures') and audio.pictures: song_info.has_cover = True
-                    except: pass
+                                if 'APIC:' in audio.tags or 'APIC' in audio.tags: 
+                                    song_info.has_cover = True
+                                elif 'covr' in audio.tags: 
+                                    song_info.has_cover = True
+                                elif hasattr(audio, 'pictures') and audio.pictures: 
+                                    song_info.has_cover = True
+                    except Exception as e:
+                        print(f"Error reading audio metadata: {e}")
                     
                     # 关联缓存歌词
-                    # 1. 本地 lrc
                     lrc_path = os.path.splitext(full_path)[0] + ".lrc"
                     if os.path.exists(lrc_path):
                         with open(lrc_path, 'r', encoding='utf-8', errors='ignore') as f:
                             song_info.lyrics = f.read()
                     else:
-                        # 2. 缓存 lrc
                         cache_name = get_cache_filename(song_info.artist, song_info.title)
                         cached_lrc = os.path.join(LYRIC_DIR, cache_name + ".lrc")
                         if os.path.exists(cached_lrc):
                             with open(cached_lrc, 'r', encoding='utf-8') as f:
                                 song_info.lyrics = f.read()
 
-                    # 如果没有内嵌封面，检查有没有缓存封面，更新标记
+                    # 检查缓存封面
                     if not song_info.has_cover:
                         cache_name = get_cache_filename(song_info.artist, song_info.title)
                         if os.path.exists(os.path.join(COVER_DIR, cache_name + ".jpg")):
-                            song_info.has_cover = True # 欺骗前端说有封面，前端会来调 /api/cover
+                            song_info.has_cover = True
 
                 except Exception as e:
-                    print(f"Error: {e}")
+                    print(f"Error processing song {file}: {e}")
                 
                 songs.append(song_info)
                 need_scrape_list.append(song_info)
 
+    # 默认按文件名排序
     songs.sort(key=lambda x: x.filename)
 
-    # 启动后台线程进行刮削 (只在未运行时启动，防止多重线程)
-    # 使用 Daemon 线程，主程序退出它也会退出
-    if threading.active_count() < 5: # 简单判断，防止重复开启大量线程
+    # 启动后台刮削线程
+    if threading.active_count() < 5:
         t = threading.Thread(target=scrape_metadata_background, args=(need_scrape_list,), daemon=True)
         t.start()
 
