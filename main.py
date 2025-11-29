@@ -46,6 +46,10 @@ class Song(BaseModel):
     title_initial: Optional[str] = ""
     artist_initial: Optional[str] = ""
     album_initial: Optional[str] = ""
+    # 新增排序字段
+    title_sort: Optional[str] = ""
+    artist_sort: Optional[str] = ""
+    album_sort: Optional[str] = ""
 
 # --- 工具函数 ---
 def get_cache_filename(artist, title):
@@ -82,6 +86,28 @@ def get_initials(text: str) -> str:
             return "#"
     except:
         return "#"
+
+def get_sort_key(text: str) -> str:
+    """生成排序用的键值：基于首字母分组，英文在前，中文在后"""
+    if not text or text.strip() == "":
+        return "ZZZZZZ"  # 空值排最后
+    
+    # 获取首字母
+    initial = get_initials(text)
+    
+    # 检查第一个字符是否为英文字母
+    first_char = text[0]
+    if first_char.isalpha() and first_char.isascii():
+        # 英文：在首字母后加0确保英文在前
+        return initial + "0" + text.upper()
+    else:
+        # 中文：转换为拼音，在首字母后加1确保中文在后
+        try:
+            pinyin = lazy_pinyin(text, style=Style.NORMAL, strict=False)
+            pinyin_str = "".join(pinyin).upper()
+            return initial + "1" + pinyin_str
+        except:
+            return initial + "1" + text
 
 # --- 新 API 刮削逻辑 (api.lrc.cx) ---
 def scrape_metadata_background(songs_list):
@@ -169,7 +195,11 @@ def get_songs():
                     # 初始化首字母字段
                     title_initial=get_initials(default_title),
                     artist_initial="#",
-                    album_initial="#"
+                    album_initial="#",
+                    # 初始化排序字段
+                    title_sort=get_sort_key(default_title),
+                    artist_sort=get_sort_key("未知艺术家"),
+                    album_sort=get_sort_key("未知专辑")
                 )
                 
                 try:
@@ -193,10 +223,14 @@ def get_songs():
                             elif 'album' in audio: 
                                 song_info.album = str(audio['album'][0])
 
-                            # 计算首字母
+                            # 计算首字母和排序键
                             song_info.title_initial = get_initials(song_info.title)
                             song_info.artist_initial = get_initials(song_info.artist)
                             song_info.album_initial = get_initials(song_info.album)
+                            
+                            song_info.title_sort = get_sort_key(song_info.title)
+                            song_info.artist_sort = get_sort_key(song_info.artist)
+                            song_info.album_sort = get_sort_key(song_info.album)
 
                             # 检查内嵌封面
                             if hasattr(audio, 'tags'):
