@@ -6,7 +6,7 @@
 ## The Origin of This Music Player
 I often listen to music while working, both at the office and at home. However, with such a large collection of songs, I had to store a copy on my work computer and another on my home computer. After setting up my home NAS, I’ve been wanting to host my music library on the NAS and use a web-based player to listen to my songs. I tried many options, but none quite fit my needs. My requirements are simple: shuffle play and lyrics/cover scraping. So, I decided to create a simple player myself. In just half a day, this project came to life—made for personal use, purely as a hobby programming endeavor.
 
-![image](https://github.com/BlazeZheng/simple-nas-music-player/blob/main/%E5%85%89%E8%BE%89%E6%92%AD%E6%94%BE%E5%99%A8.png)
+![image](https://github.com/BlazeZheng/simple-nas-music-player/blob/main/BlazePlayer.jpeg?raw=true)
 
 [English](#-english) | [中文](#-中文说明)
 
@@ -109,6 +109,7 @@ docker run -d \
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
