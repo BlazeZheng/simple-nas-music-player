@@ -31,7 +31,7 @@ You can easily run this player using Docker.
 Download the source code to your NAS or server.
 
 #### 2. Run with Docker
-Replace `/volume1/music` `/volume1/blazeplayer/app` with your actual music & code folder path.
+Replace `/volume1/music` `/volume1/blazeplayer/app` with your actual music & app folder path.
 
 ```bash
 docker run -d \
@@ -109,6 +109,7 @@ docker run -d \
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
