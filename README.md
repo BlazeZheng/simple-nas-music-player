@@ -31,17 +31,18 @@ You can easily run this player using Docker.
 Download the source code to your NAS or server.
 
 #### 2. Run with Docker
-Replace `/path/to/your/music` with your actual music folder path.
+Replace `/volume1/music` with your actual music folder path.
+Replace`/volume1/ghplayer/app` with your actual app folder path.
 
 ```bash
 docker run -d \
-  --name nas-player \
+  --name nas-music \
   --restart unless-stopped \
   -p 8000:8000 \
-  -v /path/to/your/music:/music \
-  -v $(pwd):/app \
+  -v /volume1/music:/music \
+  -v /volume1/ghplayer/app:/app \
   python:3.9-slim \
-  /bin/bash -c "pip install -r /app/requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+  /bin/bash /app/start.sh
 ```
 ### 🛠 Tech Stack
 - Backend: Python FastAPI, Uvicorn
@@ -52,6 +53,14 @@ docker run -d \
 - Stream: GET /api/stream?path=...
 - Cover Art: GET /api/cover?path=...
 - Metadata: GET /api/songs
+
+## Update Log - November 30, 2025:
+- Added sort buttons for the song library, allowing sorting by song title, artist name, and album name. Repeatedly clicking the same button toggles between ascending and descending order.
+- Added A-Z quick selection functionality.
+- Added hotkey support.
+- The song list on the left now automatically scrolls to and highlights the currently playing song.
+- Fixed a bug where FLAC files would not automatically switch to the next track during playback.
+
 
 ---
 
@@ -77,13 +86,13 @@ docker run -d \
 
 ```bash
 docker run -d \
-  --name nas-player \
+  --name nas-music \
   --restart unless-stopped \
   -p 8000:8000 \
   -v /volume1/music:/music \
-  -v $(pwd):/app \
+  -v /volume1/ghplayer/app:/app \
   python:3.9-slim \
-  /bin/bash -c "pip install -r /app/requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+  /bin/bash /app/start.sh
 ```
 注意：首次启动时，程序会自动在代码目录下的 cache 文件夹中生成 lyrics 和 covers 目录，用于存储刮削的数据。
 ### 🛠 技术栈
@@ -94,4 +103,13 @@ docker run -d \
 ### 🤝 致谢
 - 歌词与封面 API 由 Lrc.cx 提供支持。
 - 图标库使用 RemixIcon。
+
+## 2025.11.30 升级内容：
+- 增加歌曲目录排序按钮，可以根据歌名、歌手名及专辑名排序。多次点击同一按钮支持正序和倒序。
+- 增加A-Z快速选择功能。
+- 增加热键功能。
+- 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
+- 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
+
 
