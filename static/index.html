@@ -288,7 +288,7 @@
 
                 const refreshList = () => { fetchSongs() }
 
-                // 排序功能
+                // 排序功能 - 修改为按排序键排序
                 const sortedSongs = computed(() => {
                     const songsArray = [...songs.value]
                     
@@ -297,20 +297,20 @@
                         
                         switch (sortBy.value) {
                             case 'artist':
-                                aVal = a.artist || ''
-                                bVal = b.artist || ''
+                                aVal = a.artist_sort || ''
+                                bVal = b.artist_sort || ''
                                 break
                             case 'album':
-                                aVal = a.album || ''
-                                bVal = b.album || ''
+                                aVal = a.album_sort || ''
+                                bVal = b.album_sort || ''
                                 break
                             case 'title':
                             default:
-                                aVal = a.title || ''
-                                bVal = b.title || ''
+                                aVal = a.title_sort || ''
+                                bVal = b.title_sort || ''
                         }
                         
-                        // 中文排序
+                        // 使用排序键进行比较
                         const comparison = aVal.localeCompare(bVal, 'zh-CN')
                         return sortOrder.value === 'asc' ? comparison : -comparison
                     })
