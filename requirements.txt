@@ -3,4 +3,5 @@ uvicorn
 mutagen
 requests
 aiofiles
+pypinyin
 python-multipart
