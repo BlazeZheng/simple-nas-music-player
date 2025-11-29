@@ -20,6 +20,11 @@
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin-slow { animation: spin 20s linear infinite; }
         .paused-anim { animation-play-state: paused; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .cover-container { max-height: 50vh; }
+        .cover-image { max-height: 100%; object-fit: contain; }
+        .song-item.current-song { background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); }
     </style>
 </head>
 <body class="text-slate-200 h-screen flex flex-col overflow-hidden font-sans selection:bg-purple-500 selection:text-white">
@@ -44,26 +49,57 @@
             <!-- 左侧：播放列表 -->
             <aside class="w-1/4 min-w-[300px] glass-panel flex flex-col z-10 bg-slate-900/50">
                 <div class="p-3 border-b border-slate-700/30 flex justify-between items-center">
-                    <div class="text-sm text-slate-500">
-                        <i class="ri-database-2-line mr-1"></i> 
+                    <div class="text-sm text-slate-500 flex items-center gap-2">
+                        <i class="ri-database-2-line"></i>
                         <span v-if="songs.length === 0">正在扫描...</span>
-                        <span v-else>后台正在自动更新元数据</span>
+                        <span v-else>{{ songs.length }} 首歌曲</span>
                     </div>
-                    <button @click="refreshList" title="重新获取列表" class="text-slate-400 hover:text-white"><i class="ri-refresh-line"></i></button>
+                    <div class="flex items-center gap-1">
+                        <!-- 排序按钮 -->
+                        <button @click="setSort('title')" :class="{'text-purple-400': sortBy === 'title'}" 
+                                class="p-1 hover:text-white transition-colors" title="按歌名排序 (快捷键: F1)">
+                            <i :class="sortBy === 'title' && sortOrder === 'desc' ? 'ri-music-2-line rotate-180' : 'ri-music-2-line'"></i>
+                        </button>
+                        <button @click="setSort('artist')" :class="{'text-purple-400': sortBy === 'artist'}" 
+                                class="p-1 hover:text-white transition-colors" title="按歌手排序 (快捷键: F2)">
+                            <i :class="sortBy === 'artist' && sortOrder === 'desc' ? 'ri-user-3-line rotate-180' : 'ri-user-3-line'"></i>
+                        </button>
+                        <button @click="setSort('album')" :class="{'text-purple-400': sortBy === 'album'}" 
+                                class="p-1 hover:text-white transition-colors" title="按专辑排序 (快捷键: F3)">
+                            <i :class="sortBy === 'album' && sortOrder === 'desc' ? 'ri-album-line rotate-180' : 'ri-album-line'"></i>
+                        </button>
+                        <button @click="refreshList" class="p-1 hover:text-white transition-colors" title="刷新列表 (快捷键: F5)">
+                            <i class="ri-refresh-line"></i>
+                        </button>
+                    </div>
                 </div>
                 
-                <div class="flex-1 overflow-y-auto p-2 space-y-1">
-                    <div v-for="(song, index) in songs" :key="index" @click="playSong(song)" 
-                         class="p-3 rounded-lg cursor-pointer flex items-center group transition-all hover:bg-white/5 border border-transparent"
-                         :class="{'bg-purple-500/10 border-purple-500/20': currentSong && currentSong.path === song.path}">
-                        <div class="text-sm truncate flex-1">
-                            <div class="font-medium transition-colors" :class="currentSong && currentSong.path === song.path ? 'text-purple-400' : 'text-slate-300'">
-                                {{ song.title }}
+                <div class="flex-1 flex overflow-hidden">
+                    <!-- 歌曲列表 -->
+                    <div ref="songListContainer" class="flex-1 overflow-y-auto p-2 space-y-1 relative no-scrollbar">
+                        <div v-for="(song, index) in sortedSongs" :key="index" @click="playSong(song)" 
+                             :data-index="index" :data-path="song.path" class="song-item p-3 rounded-lg cursor-pointer flex items-center group transition-all hover:bg-white/5 border border-transparent"
+                             :class="{'current-song': currentSong && currentSong.path === song.path}">
+                            <div class="text-sm truncate flex-1">
+                                <div class="font-medium transition-colors" :class="currentSong && currentSong.path === song.path ? 'text-purple-400' : 'text-slate-300'">
+                                    {{ song.title }}
+                                </div>
+                                <div class="text-xs text-slate-500 group-hover:text-slate-400">
+                                    {{ song.artist }} • {{ song.album }}
+                                </div>
                             </div>
-                            <div class="text-xs text-slate-500 group-hover:text-slate-400">{{ song.artist }}</div>
+                            <div v-if="currentSong && currentSong.path === song.path" class="text-purple-400 animate-pulse">
+                                <i class="ri-sound-module-fill"></i>
+                            </div>
                         </div>
-                        <div v-if="currentSong && currentSong.path === song.path" class="text-purple-400 animate-pulse">
-                            <i class="ri-sound-module-fill"></i>
+                    </div>
+                    
+                    <!-- A-Z 索引条 -->
+                    <div class="w-6 flex flex-col items-center py-2 space-y-1 text-xs text-slate-500 overflow-y-auto no-scrollbar">
+                        <div v-for="letter in indexLetters" :key="letter" 
+                             @click="scrollToLetter(letter)"
+                             class="cursor-pointer hover:text-purple-400 transition-colors w-4 h-4 flex items-center justify-center rounded hover:bg-white/5">
+                            {{ letter }}
                         </div>
                     </div>
                 </div>
@@ -114,11 +150,11 @@
                     <i class="ri-information-line"></i>
                     <h2 class="text-xs font-bold uppercase tracking-widest">Track Info</h2>
                 </div>
-                <div v-if="currentSong" class="space-y-6 animate-fade-in">
-                    <div class="relative aspect-square rounded-lg overflow-hidden shadow-2xl border border-white/10">
-                        <img :src="displayCover" class="w-full h-full object-cover" :key="displayCover">
+                <div v-if="currentSong" class="space-y-6 animate-fade-in flex-1 flex flex-col">
+                    <div class="cover-container flex justify-center">
+                        <img :src="displayCover" class="cover-image rounded-lg shadow-2xl border border-white/10" :key="displayCover">
                     </div>
-                    <div class="space-y-4 font-mono text-sm">
+                    <div class="space-y-4 font-mono text-sm flex-1 overflow-y-auto">
                         <div class="bg-white/5 p-3 rounded-lg border border-white/5">
                             <div class="text-xs text-slate-500 mb-1">Title</div>
                             <div class="font-bold text-white truncate">{{ currentSong.title }}</div>
@@ -159,16 +195,20 @@
 
             <div class="w-1/3 flex flex-col items-center justify-center">
                 <div class="flex items-center gap-8 mb-2">
-                    <button @click="toggleLoop" :title="loopMode===0?'顺序':(loopMode===1?'列表循环':'单曲循环')"
+                    <button @click="toggleLoop" :title="getLoopTitle()"
                             :class="loopMode > 0 ? 'text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'">
                         <i :class="loopMode === 2 ? 'ri-repeat-one-line' : 'ri-repeat-2-line'" class="text-lg"></i>
                     </button>
-                    <button @click="prevSong" class="text-slate-300 hover:text-white hover:scale-110 transition-transform active:scale-95"><i class="ri-skip-back-fill text-2xl"></i></button>
-                    <button @click="togglePlay" class="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-purple-500/20 active:scale-95">
+                    <button @click="prevSong" class="text-slate-300 hover:text-white hover:scale-110 transition-transform active:scale-95" title="上一曲 (快捷键: PageUp)">
+                        <i class="ri-skip-back-fill text-2xl"></i>
+                    </button>
+                    <button @click="togglePlay" class="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-purple-500/20 active:scale-95" title="播放/暂停 (快捷键: 空格)">
                         <i :class="isPlaying ? 'ri-pause-fill' : 'ri-play-fill'" class="text-2xl ml-0.5"></i>
                     </button>
-                    <button @click="nextSong(true)" class="text-slate-300 hover:text-white hover:scale-110 transition-transform active:scale-95"><i class="ri-skip-forward-fill text-2xl"></i></button>
-                    <button @click="toggleShuffle" title="随机播放"
+                    <button @click="nextSong(true)" class="text-slate-300 hover:text-white hover:scale-110 transition-transform active:scale-95" title="下一曲 (快捷键: PageDown)">
+                        <i class="ri-skip-forward-fill text-2xl"></i>
+                    </button>
+                    <button @click="toggleShuffle" :title="'随机播放' + (isShuffle ? ' (开)' : ' (关)') + ' (快捷键: S)'"
                             :class="isShuffle ? 'text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'">
                         <i class="ri-shuffle-line text-lg"></i>
                     </button>
@@ -184,7 +224,7 @@
             </div>
 
             <div class="w-1/3 flex justify-end items-center gap-3">
-                <button @click="toggleMute" class="text-slate-400 hover:text-white">
+                <button @click="toggleMute" class="text-slate-400 hover:text-white" title="静音/取消静音 (快捷键: M)">
                     <i :class="volume === 0 ? 'ri-volume-mute-line' : (volume < 0.5 ? 'ri-volume-down-line' : 'ri-volume-up-line')"></i>
                 </button>
                 <div class="w-24 h-1 bg-slate-700 rounded-full relative overflow-hidden group">
@@ -197,7 +237,7 @@
     </div>
 
     <script>
-        const { createApp, ref, computed } = Vue
+        const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue
         const DEFAULT_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23334155'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z'/%3E%3C/svg%3E";
 
         createApp({
@@ -210,6 +250,10 @@
                 const loopMode = ref(1); const isShuffle = ref(true)
                 const parsedLyrics = ref([]); const currentLineIndex = ref(-1)
                 const lyricsContainer = ref(null)
+                const songListContainer = ref(null)
+                const sortBy = ref('title') // 默认按歌名排序
+                const sortOrder = ref('asc') // 排序顺序
+                const flacWatchdog = ref(null) // FLAC看门狗定时器
 
                 // 1. 获取列表并初始化
                 const fetchSongs = () => {
@@ -243,6 +287,87 @@
                 fetchSongs()
 
                 const refreshList = () => { fetchSongs() }
+
+                // 排序功能
+                const sortedSongs = computed(() => {
+                    const songsArray = [...songs.value]
+                    
+                    return songsArray.sort((a, b) => {
+                        let aVal, bVal
+                        
+                        switch (sortBy.value) {
+                            case 'artist':
+                                aVal = a.artist || ''
+                                bVal = b.artist || ''
+                                break
+                            case 'album':
+                                aVal = a.album || ''
+                                bVal = b.album || ''
+                                break
+                            case 'title':
+                            default:
+                                aVal = a.title || ''
+                                bVal = b.title || ''
+                        }
+                        
+                        // 中文排序
+                        const comparison = aVal.localeCompare(bVal, 'zh-CN')
+                        return sortOrder.value === 'asc' ? comparison : -comparison
+                    })
+                })
+
+                // 获取当前排序字段的首字母
+                const getCurrentInitial = (song) => {
+                    switch (sortBy.value) {
+                        case 'artist':
+                            return song.artist_initial || '#'
+                        case 'album':
+                            return song.album_initial || '#'
+                        case 'title':
+                        default:
+                            return song.title_initial || '#'
+                    }
+                }
+
+                // 获取索引字母列表
+                const indexLetters = computed(() => {
+                    const letters = new Set()
+                    sortedSongs.value.forEach(song => {
+                        const initial = getCurrentInitial(song)
+                        if (initial) {
+                            // 只保留字母和#，其他字符都归为#
+                            const normalizedInitial = /^[A-Za-z]$/.test(initial) ? initial.toUpperCase() : '#'
+                            letters.add(normalizedInitial)
+                        }
+                    })
+                    return Array.from(letters).sort()
+                })
+
+                // 滚动到指定字母
+                const scrollToLetter = (letter) => {
+                    const container = document.querySelector('.overflow-y-auto')
+                    const elements = container.querySelectorAll('.song-item')
+                    
+                    for (let el of elements) {
+                        const songIndex = parseInt(el.dataset.index)
+                        const songInitial = getCurrentInitial(sortedSongs.value[songIndex])
+                        const normalizedInitial = /^[A-Za-z]$/.test(songInitial) ? songInitial.toUpperCase() : '#'
+                        if (normalizedInitial === letter) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            break
+                        }
+                    }
+                }
+
+                // 切换排序方式
+                const setSort = (field) => {
+                    if (sortBy.value === field) {
+                        sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+                    } else {
+                        sortBy.value = field
+                        sortOrder.value = 'asc'
+                    }
+                }
 
                 // 封面: 增加时间戳参数防止缓存导致不更新
                 const displayCover = computed(() => {
@@ -279,6 +404,24 @@
                     isPlaying.value = true
                     currentLineIndex.value = -1
                     if(lyricsContainer.value) lyricsContainer.value.scrollTop = 0
+                    
+                    // 等待DOM更新后滚动到当前歌曲
+                    await nextTick()
+                    scrollToCurrentSong()
+                }
+
+                // 滚动到当前播放的歌曲
+                const scrollToCurrentSong = () => {
+                    if (!currentSong.value || !songListContainer.value) return
+                    
+                    const currentSongElement = songListContainer.value.querySelector(`.song-item[data-path="${currentSong.value.path}"]`)
+                    if (currentSongElement) {
+                        currentSongElement.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center',
+                            inline: 'nearest'
+                        })
+                    }
                 }
 
                 const streamUrl = computed(() => currentSong.value ? `/api/stream?path=${encodeURIComponent(currentSong.value.path)}` : '')
@@ -289,31 +432,234 @@
                     if (playPromise !== undefined) {
                         playPromise.then(_ => { isPlaying.value = true; }).catch(error => { isPlaying.value = false; });
                     }
+                    
+                    // 启动FLAC看门狗
+                    startFlacWatchdog()
                 }
 
-                const togglePlay = () => { const audio = audioPlayer.value; if(audio.paused){audio.play();isPlaying.value=true}else{audio.pause();isPlaying.value=false} }
+                // FLAC看门狗 - 解决FLAC不能自动切歌的问题
+                const startFlacWatchdog = () => {
+                    // 清除之前的看门狗
+                    if (flacWatchdog.value) {
+                        clearInterval(flacWatchdog.value)
+                    }
+                    
+                    // 如果是FLAC文件，启动看门狗
+                    if (currentSong.value && currentSong.value.filename.toLowerCase().endsWith('.flac')) {
+                        flacWatchdog.value = setInterval(() => {
+                            if (audioPlayer.value && duration.value > 0) {
+                                // 如果当前时间接近总时长（相差不到1秒），强制切歌
+                                if (currentTime.value >= duration.value - 1) {
+                                    console.log('FLAC看门狗：检测到歌曲即将结束，强制切歌')
+                                    onEnded()
+                                    clearInterval(flacWatchdog.value)
+                                }
+                            }
+                        }, 500) // 每500毫秒检查一次
+                    }
+                }
+
+                const togglePlay = () => { 
+                    const audio = audioPlayer.value; 
+                    if(audio.paused){
+                        audio.play();
+                        isPlaying.value=true;
+                        // 重新启动FLAC看门狗
+                        startFlacWatchdog();
+                    } else {
+                        audio.pause();
+                        isPlaying.value=false;
+                    } 
+                }
+                
                 const toggleLoop = () => loopMode.value = (loopMode.value + 1) % 3
+                const getLoopTitle = () => {
+                    const titles = ['顺序播放 (快捷键: L)', '列表循环 (快捷键: L)', '单曲循环 (快捷键: L)']
+                    return titles[loopMode.value]
+                }
                 const toggleShuffle = () => isShuffle.value = !isShuffle.value
                 
                 const nextSong = (manual=false) => {
                     if(!songs.value.length) return
-                    if(loopMode.value===2 && !manual) { audioPlayer.value.currentTime=0; audioPlayer.value.play(); return }
-                    let nextIdx = 0; const currIdx = songs.value.findIndex(s => s.path === currentSong.value?.path)
-                    if(isShuffle.value) { do { nextIdx = Math.floor(Math.random()*songs.value.length) } while(nextIdx === currIdx && songs.value.length > 1) } 
-                    else { nextIdx = currIdx + 1; if(nextIdx >= songs.value.length) { if(loopMode.value===0) return; nextIdx = 0 } }
+                    if(loopMode.value===2 && !manual) { 
+                        audioPlayer.value.currentTime=0; 
+                        audioPlayer.value.play(); 
+                        return 
+                    }
+                    let nextIdx = 0; 
+                    const currIdx = songs.value.findIndex(s => s.path === currentSong.value?.path)
+                    if(isShuffle.value) { 
+                        do { 
+                            nextIdx = Math.floor(Math.random()*songs.value.length) 
+                        } while(nextIdx === currIdx && songs.value.length > 1) 
+                    } 
+                    else { 
+                        nextIdx = currIdx + 1; 
+                        if(nextIdx >= songs.value.length) { 
+                            if(loopMode.value===0) return; 
+                            nextIdx = 0 
+                        } 
+                    }
                     playSong(songs.value[nextIdx])
                 }
-                const prevSong = () => { const currIdx = songs.value.findIndex(s => s.path === currentSong.value?.path); let prevIdx = currIdx - 1; if(prevIdx < 0) prevIdx = songs.value.length - 1; playSong(songs.value[prevIdx]) }
-                const onTimeUpdate = () => { const audio = audioPlayer.value; currentTime.value = audio.currentTime; if(parsedLyrics.value.length){ let idx = parsedLyrics.value.findIndex(l => l.time > audio.currentTime) - 1; if(idx < 0 && audio.currentTime >= parsedLyrics.value[0].time) idx = 0; if(idx === -2) idx = parsedLyrics.value.length - 1; if(idx !== currentLineIndex.value) { currentLineIndex.value = idx; scrollToLyric(idx) } } }
-                const scrollToLyric = (idx) => { const el = document.getElementById('line-'+idx); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}) }
-                const onEnded = () => nextSong(false)
+                
+                const prevSong = () => { 
+                    const currIdx = songs.value.findIndex(s => s.path === currentSong.value?.path); 
+                    let prevIdx = currIdx - 1; 
+                    if(prevIdx < 0) prevIdx = songs.value.length - 1; 
+                    playSong(songs.value[prevIdx]) 
+                }
+                
+                const onTimeUpdate = () => { 
+                    const audio = audioPlayer.value; 
+                    currentTime.value = audio.currentTime; 
+                    if(parsedLyrics.value.length){ 
+                        let idx = parsedLyrics.value.findIndex(l => l.time > audio.currentTime) - 1; 
+                        if(idx < 0 && audio.currentTime >= parsedLyrics.value[0].time) idx = 0; 
+                        if(idx === -2) idx = parsedLyrics.value.length - 1; 
+                        if(idx !== currentLineIndex.value) { 
+                            currentLineIndex.value = idx; 
+                            scrollToLyric(idx) 
+                        } 
+                    } 
+                }
+                
+                const scrollToLyric = (idx) => { 
+                    const el = document.getElementById('line-'+idx); 
+                    if(el) el.scrollIntoView({behavior:'smooth', block:'center'}) 
+                }
+                
+                const onEnded = () => {
+                    // 清除FLAC看门狗
+                    if (flacWatchdog.value) {
+                        clearInterval(flacWatchdog.value)
+                    }
+                    nextSong(false) 
+                }
+                
                 const onSeek = () => audioPlayer.value.currentTime = currentTime.value
-                const seekTo = (t) => { audioPlayer.value.currentTime = t; audioPlayer.value.play(); isPlaying.value = true }
-                const formatTime = (s) => { if(!s) return "00:00"; const m=Math.floor(s/60); const sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}` }
+                const seekTo = (t) => { 
+                    audioPlayer.value.currentTime = t; 
+                    audioPlayer.value.play(); 
+                    isPlaying.value = true;
+                    // 重新启动FLAC看门狗
+                    startFlacWatchdog();
+                }
+                
+                const seekForward = () => { 
+                    if(audioPlayer.value) { 
+                        audioPlayer.value.currentTime = Math.min(audioPlayer.value.currentTime + 10, duration.value); 
+                    } 
+                }
+                
+                const seekBackward = () => { 
+                    if(audioPlayer.value) { 
+                        audioPlayer.value.currentTime = Math.max(audioPlayer.value.currentTime - 10, 0); 
+                    } 
+                }
+                
+                const formatTime = (s) => { 
+                    if(!s) return "00:00"; 
+                    const m=Math.floor(s/60); 
+                    const sec=Math.floor(s%60); 
+                    return `${m}:${sec.toString().padStart(2,'0')}` 
+                }
+                
                 const updateVolume = () => { audioPlayer.value.volume = volume.value }
-                const toggleMute = () => { if(volume.value > 0) { audioPlayer.value.dataset.prevVol = volume.value; volume.value = 0; } else { volume.value = audioPlayer.value.dataset.prevVol || 1.0; } audioPlayer.value.volume = volume.value }
+                
+                const toggleMute = () => { 
+                    if(volume.value > 0) { 
+                        audioPlayer.value.dataset.prevVol = volume.value; 
+                        volume.value = 0; 
+                    } else { 
+                        volume.value = audioPlayer.value.dataset.prevVol || 1.0; 
+                    } 
+                    audioPlayer.value.volume = volume.value 
+                }
 
-                return { songs, currentSong, isPlaying, audioPlayer, streamUrl, currentTime, duration, volume, loopMode, isShuffle, parsedLyrics, currentLineIndex, lyricsContainer, playSong, togglePlay, nextSong, prevSong, toggleLoop, toggleShuffle, onTimeUpdate, onLoadedMetadata, onEnded, onSeek, seekTo, formatTime, displayCover, updateVolume, toggleMute, refreshList }
+                // 快捷键处理
+                const handleKeyDown = (e) => {
+                    // 忽略在输入框中的按键
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+                    
+                    switch(e.key) {
+                        case ' ': // 空格键 - 播放/暂停
+                            e.preventDefault()
+                            togglePlay()
+                            break
+                        case 'PageUp': // PageUp - 上一曲
+                            e.preventDefault()
+                            prevSong()
+                            break
+                        case 'PageDown': // PageDown - 下一曲
+                            e.preventDefault()
+                            nextSong(true)
+                            break
+                        case 'ArrowLeft': // 左箭头 - 后退10秒
+                            e.preventDefault()
+                            seekBackward()
+                            break
+                        case 'ArrowRight': // 右箭头 - 前进10秒
+                            e.preventDefault()
+                            seekForward()
+                            break
+                        case 'l': // L键 - 切换循环模式
+                        case 'L':
+                            e.preventDefault()
+                            toggleLoop()
+                            break
+                        case 's': // S键 - 切换随机播放
+                        case 'S':
+                            e.preventDefault()
+                            toggleShuffle()
+                            break
+                        case 'm': // M键 - 静音/取消静音
+                        case 'M':
+                            e.preventDefault()
+                            toggleMute()
+                            break
+                        case 'F1': // F1 - 按歌名排序
+                            e.preventDefault()
+                            setSort('title')
+                            break
+                        case 'F2': // F2 - 按歌手排序
+                            e.preventDefault()
+                            setSort('artist')
+                            break
+                        case 'F3': // F3 - 按专辑排序
+                            e.preventDefault()
+                            setSort('album')
+                            break
+                        case 'F5': // F5 - 刷新列表
+                            e.preventDefault()
+                            refreshList()
+                            break
+                    }
+                }
+
+                // 生命周期钩子
+                onMounted(() => {
+                    document.addEventListener('keydown', handleKeyDown)
+                })
+
+                onUnmounted(() => {
+                    document.removeEventListener('keydown', handleKeyDown)
+                    // 清除FLAC看门狗
+                    if (flacWatchdog.value) {
+                        clearInterval(flacWatchdog.value)
+                    }
+                })
+
+                return { 
+                    songs, currentSong, isPlaying, audioPlayer, streamUrl, currentTime, duration, volume, 
+                    loopMode, isShuffle, parsedLyrics, currentLineIndex, lyricsContainer, songListContainer,
+                    sortBy, sortOrder, sortedSongs, indexLetters,
+                    playSong, togglePlay, nextSong, prevSong, toggleLoop, toggleShuffle, 
+                    onTimeUpdate, onLoadedMetadata, onEnded, onSeek, seekTo, formatTime, 
+                    displayCover, updateVolume, toggleMute, refreshList,
+                    setSort, scrollToLetter, getCurrentInitial, getLoopTitle,
+                    seekForward, seekBackward, scrollToCurrentSong
+                }
             }
         }).mount('#app')
     </script>
