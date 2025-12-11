@@ -59,6 +59,7 @@ docker run -d \
 - CORS Restrictions: Configured a specific list of allowed domains instead of using the wildcard "*".
 - File Type Validation: Only specific audio file formats are permitted.
 - Prevention of Directory Traversal Attacks: Ensured all access remains within the designated music directory.
+
 Additionally, it was found that the watchdog program resolves most FLAC music playback issues, but some songs still get stuck and fail to switch to the next track. Solutions for further improvements are currently under investigation.
 
 ## Update Log - November 30, 2025:
@@ -117,6 +118,7 @@ docker run -d \
 - CORS限制：配置具体的允许域名列表，而不是通配符 "*"
 - 文件类型检查：只允许特定音频文件格式
 - 防目录遍历：确保所有访问都在指定的音乐目录内
+
 另外，发现看门狗程序能解决大部分的FLAC音乐播放问题，但还是有部分歌曲会卡住不切歌，后续改动方案研究中。
 
 ## 2025.11.30 升级内容：
@@ -125,6 +127,7 @@ docker run -d \
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
