@@ -54,6 +54,7 @@ docker run -d \
 - Metadata: GET /api/songs
 
 ## Update Log - December 12, 2025:
+
 ### Backend Security Fixes:
 - Path Security Verification: Added the validate_and_safe_path function to verify all user-provided paths.
 - CORS Restrictions: Configured a specific list of allowed domains instead of using the wildcard "*".
@@ -77,7 +78,7 @@ Additionally, it was found that the watchdog program resolves most FLAC music pl
 
 一款专为 NAS 设计的轻量级、高颜值网页音乐播放器。使用 FastAPI 和 Vue 3 开发。它拥有现代化的界面设计，支持后台自动刮削元数据，且无需复杂的数据库配置，开箱即用。
 
-###✨ 主要功能
+### ✨ 主要功能
 - 零配置: 不需要安装 MySQL 或 Redis，直接读取文件目录即可播放。
 - 高颜值界面: 使用 Tailwind CSS 打造的磨砂玻璃质感 UI，带有黑胶唱片旋转动画。
 - 后台刮削: 播放器会在后台静默调用 lrc.cx API 获取缺失的歌词和封面，完全不卡顿前端界面。
@@ -113,7 +114,7 @@ docker run -d \
 - 图标库使用 RemixIcon。
 
 ## 2025.12.12 升级内容：
-###后端安全修复：
+### 后端安全修复：
 - 路径安全验证：新增 validate_and_safe_path 函数，验证所有用户传入的路径
 - CORS限制：配置具体的允许域名列表，而不是通配符 "*"
 - 文件类型检查：只允许特定音频文件格式
@@ -127,6 +128,7 @@ docker run -d \
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
