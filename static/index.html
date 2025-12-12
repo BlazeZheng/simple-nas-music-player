@@ -173,6 +173,12 @@
                                 <div class="text-slate-300 uppercase text-xs">{{ currentSong.filename.split('.').pop() }} / {{ currentSong.size }}</div>
                             </div>
                         </div>
+                        
+                        <!-- 调试信息显示区域 -->
+                        <div v-if="isFlac && isPlaying" class="bg-red-500/10 p-3 rounded-lg border border-red-500/30 text-xs font-mono text-red-300 animate-pulse">
+                            <div class="font-bold mb-1"><i class="ri-bug-line"></i> FLAC 实时监控中</div>
+                            <div>状态: {{ monitorStatus }}</div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -233,7 +239,14 @@
                 </div>
             </div>
         </footer>
-        <audio ref="audioPlayer" :src="streamUrl" @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="onEnded"></audio>
+        <!-- 添加了 @error 和 @waiting @stalled 事件监听 -->
+        <audio ref="audioPlayer" :src="streamUrl" 
+               @timeupdate="onTimeUpdate" 
+               @loadedmetadata="onLoadedMetadata" 
+               @ended="onEnded"
+               @error="onAudioError"
+               @waiting="onWaiting"
+               @stalled="onStalled"></audio>
     </div>
 
     <script>
@@ -251,26 +264,29 @@
                 const parsedLyrics = ref([]); const currentLineIndex = ref(-1)
                 const lyricsContainer = ref(null)
                 const songListContainer = ref(null)
-                const sortBy = ref('title') // 默认按歌名排序
-                const sortOrder = ref('asc') // 排序顺序
-                const flacWatchdog = ref(null) // FLAC看门狗定时器
+                const sortBy = ref('title') 
+                const sortOrder = ref('asc') 
+                
+                // --- 深度修改：FLAC卡顿监测专用变量 ---
+                const stuckMonitorTimer = ref(null)
+                const monitorStatus = ref('待机')
+                let lastCheckTime = -1
+                let stuckCounter = 0
+                const STUCK_THRESHOLD = 6 // 500ms * 6 = 3秒，增加一点容错
+                const isFlac = computed(() => currentSong.value && currentSong.value.filename.toLowerCase().endsWith('.flac'))
 
-                // 1. 获取列表并初始化
                 const fetchSongs = () => {
                     fetch('/api/songs').then(res => res.json()).then(data => { 
-                        const oldPath = currentSong.value?.path // 记住当前播放的，防止刷新后断掉
+                        const oldPath = currentSong.value?.path 
                         songs.value = data
                         
-                        // 如果是第一次加载，随机来一首
                         if (!currentSong.value && songs.value.length > 0) {
                             const randIdx = Math.floor(Math.random() * songs.value.length)
                             playSong(songs.value[randIdx])
                         } 
-                        // 如果已经有在播放的，更新一下信息(比如封面刷出来了)
                         else if (currentSong.value) {
                             const newSongInfo = songs.value.find(s => s.path === oldPath)
                             if (newSongInfo) {
-                                // 保持状态但更新元数据
                                 if(newSongInfo.has_cover !== currentSong.value.has_cover) {
                                     currentSong.value.has_cover = newSongInfo.has_cover
                                 }
@@ -283,59 +299,37 @@
                     })
                 }
                 
-                // 启动获取
                 fetchSongs()
 
                 const refreshList = () => { fetchSongs() }
 
-                // 排序功能 - 修改为按排序键排序
                 const sortedSongs = computed(() => {
                     const songsArray = [...songs.value]
-                    
                     return songsArray.sort((a, b) => {
                         let aVal, bVal
-                        
                         switch (sortBy.value) {
-                            case 'artist':
-                                aVal = a.artist_sort || ''
-                                bVal = b.artist_sort || ''
-                                break
-                            case 'album':
-                                aVal = a.album_sort || ''
-                                bVal = b.album_sort || ''
-                                break
-                            case 'title':
-                            default:
-                                aVal = a.title_sort || ''
-                                bVal = b.title_sort || ''
+                            case 'artist': aVal = a.artist_sort || ''; bVal = b.artist_sort || ''; break
+                            case 'album': aVal = a.album_sort || ''; bVal = b.album_sort || ''; break
+                            case 'title': default: aVal = a.title_sort || ''; bVal = b.title_sort || ''
                         }
-                        
-                        // 使用排序键进行比较
                         const comparison = aVal.localeCompare(bVal, 'zh-CN')
                         return sortOrder.value === 'asc' ? comparison : -comparison
                     })
                 })
 
-                // 获取当前排序字段的首字母
                 const getCurrentInitial = (song) => {
                     switch (sortBy.value) {
-                        case 'artist':
-                            return song.artist_initial || '#'
-                        case 'album':
-                            return song.album_initial || '#'
-                        case 'title':
-                        default:
-                            return song.title_initial || '#'
+                        case 'artist': return song.artist_initial || '#'
+                        case 'album': return song.album_initial || '#'
+                        case 'title': default: return song.title_initial || '#'
                     }
                 }
 
-                // 获取索引字母列表
                 const indexLetters = computed(() => {
                     const letters = new Set()
                     sortedSongs.value.forEach(song => {
                         const initial = getCurrentInitial(song)
                         if (initial) {
-                            // 只保留字母和#，其他字符都归为#
                             const normalizedInitial = /^[A-Za-z]$/.test(initial) ? initial.toUpperCase() : '#'
                             letters.add(normalizedInitial)
                         }
@@ -343,7 +337,6 @@
                     return Array.from(letters).sort()
                 })
 
-                // 滚动到指定字母
                 const scrollToLetter = (letter) => {
                     const container = document.querySelector('.overflow-y-auto')
                     const elements = container.querySelectorAll('.song-item')
@@ -359,7 +352,6 @@
                     }
                 }
 
-                // 切换排序方式
                 const setSort = (field) => {
                     if (sortBy.value === field) {
                         sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
@@ -369,7 +361,6 @@
                     }
                 }
 
-                // 封面: 增加时间戳参数防止缓存导致不更新
                 const displayCover = computed(() => {
                     if (currentSong.value && currentSong.value.has_cover) 
                         return `/api/cover?path=${encodeURIComponent(currentSong.value.path)}&t=${Date.now()}`
@@ -391,8 +382,11 @@
                 }
 
                 const playSong = async (song) => {
-                    // 如果点的就是当前这首，不做动作
                     if (currentSong.value && currentSong.value.path === song.path) return
+                    
+                    // 重置监测
+                    stopStuckMonitor()
+                    monitorStatus.value = '初始化...'
 
                     currentSong.value = song
                     parsedLyrics.value = [] 
@@ -405,22 +399,15 @@
                     currentLineIndex.value = -1
                     if(lyricsContainer.value) lyricsContainer.value.scrollTop = 0
                     
-                    // 等待DOM更新后滚动到当前歌曲
                     await nextTick()
                     scrollToCurrentSong()
                 }
 
-                // 滚动到当前播放的歌曲
                 const scrollToCurrentSong = () => {
                     if (!currentSong.value || !songListContainer.value) return
-                    
                     const currentSongElement = songListContainer.value.querySelector(`.song-item[data-path="${currentSong.value.path}"]`)
                     if (currentSongElement) {
-                        currentSongElement.scrollIntoView({ 
-                            behavior: 'smooth', 
-                            block: 'center',
-                            inline: 'nearest'
-                        })
+                        currentSongElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
                     }
                 }
 
@@ -432,31 +419,104 @@
                     if (playPromise !== undefined) {
                         playPromise.then(_ => { isPlaying.value = true; }).catch(error => { isPlaying.value = false; });
                     }
-                    
-                    // 启动FLAC看门狗
-                    startFlacWatchdog()
+                    // 启动FLAC监测
+                    startStuckMonitor();
                 }
 
-                // FLAC看门狗 - 解决FLAC不能自动切歌的问题
-                const startFlacWatchdog = () => {
-                    // 清除之前的看门狗
-                    if (flacWatchdog.value) {
-                        clearInterval(flacWatchdog.value)
+                // --- 核心修复：原生事件监听 ---
+                const onAudioError = (e) => {
+                    const err = audioPlayer.value.error;
+                    console.error("FLAC监控: 原生Error事件触发", err);
+                    handleStuck("原生错误: " + (err ? err.code : 'unknown'));
+                }
+
+                const onWaiting = () => {
+                    if(isFlac.value && isPlaying.value) {
+                         console.warn("FLAC监控: 缓冲区不足 (Waiting)...");
+                         // 这里不直接切歌，交给定时器去判断是否waiting太久
                     }
+                }
+
+                const onStalled = () => {
+                    if(isFlac.value && isPlaying.value) {
+                        console.warn("FLAC监控: 数据流停滞 (Stalled)...");
+                    }
+                }
+
+                // --- 核心修复：更强力的定时监控 ---
+                const startStuckMonitor = () => {
+                    stopStuckMonitor();
+
+                    if (!isFlac.value) return;
+
+                    console.log("FLAC监控: 服务已启动");
+                    monitorStatus.value = '运行中 (0)';
                     
-                    // 如果是FLAC文件，启动看门狗
-                    if (currentSong.value && currentSong.value.filename.toLowerCase().endsWith('.flac')) {
-                        flacWatchdog.value = setInterval(() => {
-                            if (audioPlayer.value && duration.value > 0) {
-                                // 如果当前时间接近总时长（相差不到1秒），强制切歌
-                                if (currentTime.value >= duration.value - 1) {
-                                    console.log('FLAC看门狗：检测到歌曲即将结束，强制切歌')
-                                    onEnded()
-                                    clearInterval(flacWatchdog.value)
-                                }
+                    // 初始化时间
+                    lastCheckTime = audioPlayer.value ? audioPlayer.value.currentTime : 0;
+                    stuckCounter = 0;
+
+                    stuckMonitorTimer.value = setInterval(() => {
+                        const audio = audioPlayer.value;
+                        if (!audio) return;
+
+                        // 1. 如果用户手动暂停了，不计数
+                        if (audio.paused || !isPlaying.value) {
+                            stuckCounter = 0;
+                            monitorStatus.value = '暂停中';
+                            return;
+                        }
+
+                        const nowTime = audio.currentTime;
+                        const timeDiff = Math.abs(nowTime - lastCheckTime);
+
+                        // 2. 判定逻辑：播放状态下，时间几乎没动
+                        if (timeDiff < 0.1) {
+                            stuckCounter++;
+                            monitorStatus.value = `卡顿计数 ${stuckCounter}/${STUCK_THRESHOLD}`;
+                            console.log(`FLAC监控: 检测到时间冻结 (${stuckCounter}/${STUCK_THRESHOLD}) 当前时间: ${nowTime}`);
+                            
+                            // 3. 达到阈值 (3秒)
+                            if (stuckCounter >= STUCK_THRESHOLD) {
+                                handleStuck("时间冻结超时");
                             }
-                        }, 500) // 每500毫秒检查一次
+                        } else {
+                            // 正常播放，重置计数器
+                            if (stuckCounter > 0) {
+                                console.log("FLAC监控: 播放恢复正常");
+                            }
+                            stuckCounter = 0;
+                            lastCheckTime = nowTime;
+                            monitorStatus.value = '正常';
+                        }
+                    }, 500);
+                }
+
+                const handleStuck = (reason) => {
+                    console.error(`FLAC监控: 确认播放失败! 原因: ${reason}。正在强制切歌...`);
+                    monitorStatus.value = '尝试恢复...';
+                    stopStuckMonitor();
+                    
+                    // 强制手段：先暂停，甚至卸载当前的 src，防止浏览器死锁
+                    if(audioPlayer.value) {
+                        audioPlayer.value.pause();
+                        audioPlayer.value.removeAttribute('src'); 
+                        audioPlayer.value.load();
                     }
+
+                    // 延时一点点切下一首
+                    setTimeout(() => {
+                        nextSong(false); 
+                    }, 100);
+                }
+
+                const stopStuckMonitor = () => {
+                    if (stuckMonitorTimer.value) {
+                        clearInterval(stuckMonitorTimer.value);
+                        stuckMonitorTimer.value = null;
+                    }
+                    stuckCounter = 0;
+                    monitorStatus.value = '停止';
                 }
 
                 const togglePlay = () => { 
@@ -464,11 +524,11 @@
                     if(audio.paused){
                         audio.play();
                         isPlaying.value=true;
-                        // 重新启动FLAC看门狗
-                        startFlacWatchdog();
+                        startStuckMonitor(); 
                     } else {
                         audio.pause();
                         isPlaying.value=false;
+                        stopStuckMonitor(); 
                     } 
                 }
                 
@@ -482,7 +542,8 @@
                 const nextSong = (manual=false) => {
                     if(!songs.value.length) return
                     if(loopMode.value===2 && !manual) { 
-                        audioPlayer.value.currentTime=0; 
+                        // 如果是单曲循环且卡死，必须重载，否则死循环
+                        audioPlayer.value.load(); 
                         audioPlayer.value.play(); 
                         return 
                     }
@@ -512,6 +573,12 @@
                 
                 const onTimeUpdate = () => { 
                     const audio = audioPlayer.value; 
+                    // 只要 timeUpdate 还在触发，就说明没完全死
+                    if(stuckCounter > 0 && isFlac.value) {
+                         stuckCounter = 0; // 重置卡顿计数
+                         lastCheckTime = audio.currentTime;
+                    }
+
                     currentTime.value = audio.currentTime; 
                     if(parsedLyrics.value.length){ 
                         let idx = parsedLyrics.value.findIndex(l => l.time > audio.currentTime) - 1; 
@@ -530,31 +597,42 @@
                 }
                 
                 const onEnded = () => {
-                    // 清除FLAC看门狗
-                    if (flacWatchdog.value) {
-                        clearInterval(flacWatchdog.value)
-                    }
+                    stopStuckMonitor(); 
                     nextSong(false) 
                 }
                 
-                const onSeek = () => audioPlayer.value.currentTime = currentTime.value
+                const onSeek = () => {
+                    audioPlayer.value.currentTime = currentTime.value;
+                    // 拖动时重置监控
+                    lastCheckTime = currentTime.value;
+                    stuckCounter = 0;
+                    if (isPlaying.value) startStuckMonitor();
+                }
+
                 const seekTo = (t) => { 
                     audioPlayer.value.currentTime = t; 
                     audioPlayer.value.play(); 
                     isPlaying.value = true;
-                    // 重新启动FLAC看门狗
-                    startFlacWatchdog();
+                    lastCheckTime = t;
+                    stuckCounter = 0;
+                    startStuckMonitor();
                 }
                 
                 const seekForward = () => { 
                     if(audioPlayer.value) { 
-                        audioPlayer.value.currentTime = Math.min(audioPlayer.value.currentTime + 10, duration.value); 
+                        const t = Math.min(audioPlayer.value.currentTime + 10, duration.value);
+                        audioPlayer.value.currentTime = t;
+                        lastCheckTime = t;
+                        if (isPlaying.value) startStuckMonitor();
                     } 
                 }
                 
                 const seekBackward = () => { 
                     if(audioPlayer.value) { 
-                        audioPlayer.value.currentTime = Math.max(audioPlayer.value.currentTime - 10, 0); 
+                        const t = Math.max(audioPlayer.value.currentTime - 10, 0); 
+                        audioPlayer.value.currentTime = t;
+                        lastCheckTime = t;
+                        if (isPlaying.value) startStuckMonitor();
                     } 
                 }
                 
@@ -577,77 +655,32 @@
                     audioPlayer.value.volume = volume.value 
                 }
 
-                // 快捷键处理
                 const handleKeyDown = (e) => {
-                    // 忽略在输入框中的按键
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
                     
                     switch(e.key) {
-                        case ' ': // 空格键 - 播放/暂停
-                            e.preventDefault()
-                            togglePlay()
-                            break
-                        case 'PageUp': // PageUp - 上一曲
-                            e.preventDefault()
-                            prevSong()
-                            break
-                        case 'PageDown': // PageDown - 下一曲
-                            e.preventDefault()
-                            nextSong(true)
-                            break
-                        case 'ArrowLeft': // 左箭头 - 后退10秒
-                            e.preventDefault()
-                            seekBackward()
-                            break
-                        case 'ArrowRight': // 右箭头 - 前进10秒
-                            e.preventDefault()
-                            seekForward()
-                            break
-                        case 'l': // L键 - 切换循环模式
-                        case 'L':
-                            e.preventDefault()
-                            toggleLoop()
-                            break
-                        case 's': // S键 - 切换随机播放
-                        case 'S':
-                            e.preventDefault()
-                            toggleShuffle()
-                            break
-                        case 'm': // M键 - 静音/取消静音
-                        case 'M':
-                            e.preventDefault()
-                            toggleMute()
-                            break
-                        case 'F1': // F1 - 按歌名排序
-                            e.preventDefault()
-                            setSort('title')
-                            break
-                        case 'F2': // F2 - 按歌手排序
-                            e.preventDefault()
-                            setSort('artist')
-                            break
-                        case 'F3': // F3 - 按专辑排序
-                            e.preventDefault()
-                            setSort('album')
-                            break
-                        case 'F5': // F5 - 刷新列表
-                            e.preventDefault()
-                            refreshList()
-                            break
+                        case ' ': e.preventDefault(); togglePlay(); break
+                        case 'PageUp': e.preventDefault(); prevSong(); break
+                        case 'PageDown': e.preventDefault(); nextSong(true); break
+                        case 'ArrowLeft': e.preventDefault(); seekBackward(); break
+                        case 'ArrowRight': e.preventDefault(); seekForward(); break
+                        case 'l': case 'L': e.preventDefault(); toggleLoop(); break
+                        case 's': case 'S': e.preventDefault(); toggleShuffle(); break
+                        case 'm': case 'M': e.preventDefault(); toggleMute(); break
+                        case 'F1': e.preventDefault(); setSort('title'); break
+                        case 'F2': e.preventDefault(); setSort('artist'); break
+                        case 'F3': e.preventDefault(); setSort('album'); break
+                        case 'F5': e.preventDefault(); refreshList(); break
                     }
                 }
 
-                // 生命周期钩子
                 onMounted(() => {
                     document.addEventListener('keydown', handleKeyDown)
                 })
 
                 onUnmounted(() => {
                     document.removeEventListener('keydown', handleKeyDown)
-                    // 清除FLAC看门狗
-                    if (flacWatchdog.value) {
-                        clearInterval(flacWatchdog.value)
-                    }
+                    stopStuckMonitor(); 
                 })
 
                 return { 
@@ -658,7 +691,9 @@
                     onTimeUpdate, onLoadedMetadata, onEnded, onSeek, seekTo, formatTime, 
                     displayCover, updateVolume, toggleMute, refreshList,
                     setSort, scrollToLetter, getCurrentInitial, getLoopTitle,
-                    seekForward, seekBackward, scrollToCurrentSong
+                    seekForward, seekBackward, scrollToCurrentSong,
+                    // 新增的返回
+                    onAudioError, onWaiting, onStalled, monitorStatus, isFlac
                 }
             }
         }).mount('#app')
