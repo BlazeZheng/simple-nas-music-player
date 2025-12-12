@@ -62,8 +62,6 @@ docker run -d \
 - Prevention of Directory Traversal Attacks: Ensured all access remains within the designated music directory.
 - Fixed a bug where FLAC files would not automatically switch to the next track during playback.
 
-Additionally, it was found that the watchdog program resolves most FLAC music playback issues, but some songs still get stuck and fail to switch to the next track. Solutions for further improvements are currently under investigation.
-
 ## Update Log - November 30, 2025:
 - Added sort buttons for the song library, allowing sorting by song title, artist name, and album name. Repeatedly clicking the same button toggles between ascending and descending order.
 - Added A-Z quick selection functionality.
@@ -121,14 +119,13 @@ docker run -d \
 - 防目录遍历：确保所有访问都在指定的音乐目录内
 - 彻底修复播放FLAC歌曲时不能自动切换歌曲的BUG。
 
-另外，发现看门狗程序能解决大部分的FLAC音乐播放问题，但还是有部分歌曲会卡住不切歌，后续改动方案研究中。
-
 ## 2025.11.30 升级内容：
 - 增加歌曲目录排序按钮，可以根据歌名、歌手名及专辑名排序。多次点击同一按钮支持正序和倒序。
 - 增加A-Z快速选择功能。
 - 增加热键功能。
 - 左侧歌曲列表会自动跳转到当前正在播放的歌曲。
 - 修复播放FLAC歌曲时不能自动切换歌曲的BUG。
+
 
 
 
