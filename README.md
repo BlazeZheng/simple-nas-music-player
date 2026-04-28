@@ -53,6 +53,19 @@ docker run -d \
 - Cover Art: GET /api/cover?path=...
 - Metadata: GET /api/songs
 
+
+## 2026-04-28 Upgrade Content：
+- Fixed CORS wildcard port invalidation issue
+- Fixed repeated audio file reading issue in /api/cover
+- Fixed regex matching accuracy issue for lyrics
+- Fixed A-Z index misalignment issue
+- Fixed abnormal behavior issue in single-track loop mode
+- Added pagination and search functionality to /api/songs
+- Added background scraping deduplication
+- Added FLAC monitoring for race condition and secondary song switching
+
+
+
 ## Update Log - December 12, 2025:
 
 ### Backend Security Fixes:
