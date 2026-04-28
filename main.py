@@ -16,37 +16,20 @@ from pypinyin import lazy_pinyin, Style
 
 app = FastAPI()
 
-# CORS配置 - 限制允许的域名
-# 在生产环境中应设置为具体的域名，如 ["https://yourdomain.com", "http://localhost:8080"]
-# 这里假设允许本地开发和NAS内网访问
-ALLOWED_ORIGINS = [
-    "http://localhost:*",
-    "http://127.0.0.1:*",
-    "http://*.local",
-    "https://*.local",
-    "http://192.168.*.*",  # 内网IP段
-    "http://10.*.*.*",     # 内网IP段
-    "http://172.16.*.*",   # 内网IP段
-    "http://172.17.*.*",
-    "http://172.18.*.*",
-    "http://172.19.*.*",
-    "http://172.20.*.*",
-    "http://172.21.*.*",
-    "http://172.22.*.*",
-    "http://172.23.*.*",
-    "http://172.24.*.*",
-    "http://172.25.*.*",
-    "http://172.26.*.*",
-    "http://172.27.*.*",
-    "http://172.28.*.*",
-    "http://172.29.*.*",
-    "http://172.30.*.*",
-    "http://172.31.*.*",
-]
+# CORS配置 - 使用正则表达式匹配允许的域名
+# FastAPI 的 allow_origins 不支持 glob 通配符，改用 allow_origin_regex
+ALLOWED_ORIGINS_REGEX = (
+    r"^https?://localhost(:\d+)?$|"
+    r"^https?://127\.0\.0\.1(:\d+)?$|"
+    r"^https?://[a-zA-Z0-9.-]*\.local(:\d+)?$|"
+    r"^https?://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$|"
+    r"^https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$|"
+    r"^https?://172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$"
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGINS_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -137,16 +120,20 @@ class Song(BaseModel):
     album: Optional[str] = "未知专辑"
     size: str = "0 MB"
     has_cover: bool = False
-    lyrics: str = "" 
+    has_lyrics: bool = False
     scraped: bool = False
-    # 新增首字母字段
     title_initial: Optional[str] = ""
     artist_initial: Optional[str] = ""
     album_initial: Optional[str] = ""
-    # 新增排序字段
     title_sort: Optional[str] = ""
     artist_sort: Optional[str] = ""
     album_sort: Optional[str] = ""
+
+class SongListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    songs: List[Song]
 
 # --- 工具函数 ---
 def get_cache_filename(artist, title):
@@ -206,11 +193,17 @@ def get_sort_key(text: str) -> str:
         except:
             return initial + "1" + text
 
+# --- 刮削去重锁 ---
+_scrape_in_progress = False
+_scrape_lock = threading.Lock()
+
 # --- 新 API 刮削逻辑 (api.lrc.cx) ---
 def scrape_metadata_background(songs_list):
     """
     后台线程：遍历所有歌曲，如果没有缓存，就去下载
+    使用全局锁确保同时只有一个刮削线程在运行
     """
+    global _scrape_in_progress
     print(f"--- 后台刮削服务启动，待处理歌曲: {len(songs_list)} 首 ---")
     
     for song in songs_list:
@@ -225,7 +218,6 @@ def scrape_metadata_background(songs_list):
         # 1. 处理歌词
         if not os.path.exists(lrc_file):
             try:
-                # API: https://api.lrc.cx/lyrics?title=xxx&artist=xxx
                 params = {"title": song.title, "artist": song.artist}
                 if song.album != "未知专辑":
                     params["album"] = song.album
@@ -242,7 +234,6 @@ def scrape_metadata_background(songs_list):
         # 2. 处理封面
         if not os.path.exists(cover_file) and not song.has_cover:
             try:
-                # API: https://api.lrc.cx/cover?title=xxx&artist=xxx
                 params = {"title": song.title, "artist": song.artist}
                 if song.album != "未知专辑":
                     params["album"] = song.album
@@ -250,7 +241,6 @@ def scrape_metadata_background(songs_list):
                 print(f"[刮削封面] {song.title} - {song.artist}")
                 resp = requests.get("https://api.lrc.cx/cover", params=params, timeout=10)
                 
-                # 检查返回的是否是图片
                 content_type = resp.headers.get('content-type', '')
                 if resp.status_code == 200 and 'image' in content_type:
                     with open(cover_file, 'wb') as f:
@@ -261,12 +251,18 @@ def scrape_metadata_background(songs_list):
         # 礼貌等待，避免触发 API 速率限制 (每首歌间隔 1 秒)
         time.sleep(1)
 
+    with _scrape_lock:
+        _scrape_in_progress = False
     print("--- 后台刮削任务完成 ---")
 
 # --- 核心接口 ---
 
-@app.get("/api/songs", response_model=List[Song])
-def get_songs():
+@app.get("/api/songs", response_model=SongListResponse)
+def get_songs(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(0, ge=0, description="每页数量，0 表示返回全部"),
+    search: str = Query("", description="搜索关键词（匹配文件名、标题、艺术家）")
+):
     songs = []
     need_scrape_list = []
 
@@ -274,17 +270,14 @@ def get_songs():
         for file in files:
             if file.lower().endswith(('.mp3', '.flac', '.m4a')):
                 full_path = os.path.join(root, file)
-                # 使用文件名作为默认标题
                 default_title = os.path.splitext(file)[0]
                 song_info = Song(
                     path=full_path, 
                     filename=file, 
                     title=default_title,
-                    # 初始化首字母字段
                     title_initial=get_initials(default_title),
                     artist_initial="#",
                     album_initial="#",
-                    # 初始化排序字段
                     title_sort=get_sort_key(default_title),
                     artist_sort=get_sort_key("未知艺术家"),
                     album_sort=get_sort_key("未知专辑")
@@ -295,7 +288,6 @@ def get_songs():
                     try:
                         audio = mutagen.File(full_path)
                         if audio:
-                            # 读取元数据
                             if 'TIT2' in audio: 
                                 song_info.title = str(audio['TIT2'])
                             elif 'title' in audio: 
@@ -311,7 +303,6 @@ def get_songs():
                             elif 'album' in audio: 
                                 song_info.album = str(audio['album'][0])
 
-                            # 计算首字母和排序键
                             song_info.title_initial = get_initials(song_info.title)
                             song_info.artist_initial = get_initials(song_info.artist)
                             song_info.album_initial = get_initials(song_info.album)
@@ -320,7 +311,6 @@ def get_songs():
                             song_info.artist_sort = get_sort_key(song_info.artist)
                             song_info.album_sort = get_sort_key(song_info.album)
 
-                            # 检查内嵌封面
                             if hasattr(audio, 'tags'):
                                 if 'APIC:' in audio.tags or 'APIC' in audio.tags: 
                                     song_info.has_cover = True
@@ -331,19 +321,16 @@ def get_songs():
                     except Exception as e:
                         print(f"Error reading audio metadata: {e}")
                     
-                    # 关联缓存歌词
+                    # 只检查歌词是否存在，不返回内容
                     lrc_path = os.path.splitext(full_path)[0] + ".lrc"
                     if os.path.exists(lrc_path):
-                        with open(lrc_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            song_info.lyrics = f.read()
+                        song_info.has_lyrics = True
                     else:
                         cache_name = get_cache_filename(song_info.artist, song_info.title)
                         cached_lrc = os.path.join(LYRIC_DIR, cache_name + ".lrc")
                         if os.path.exists(cached_lrc):
-                            with open(cached_lrc, 'r', encoding='utf-8') as f:
-                                song_info.lyrics = f.read()
+                            song_info.has_lyrics = True
 
-                    # 检查缓存封面
                     if not song_info.has_cover:
                         cache_name = get_cache_filename(song_info.artist, song_info.title)
                         if os.path.exists(os.path.join(COVER_DIR, cache_name + ".jpg")):
@@ -355,15 +342,41 @@ def get_songs():
                 songs.append(song_info)
                 need_scrape_list.append(song_info)
 
+    # 搜索过滤
+    if search:
+        search_lower = search.lower()
+        songs = [s for s in songs if (
+            search_lower in s.filename.lower() or
+            search_lower in (s.title or "").lower() or
+            search_lower in (s.artist or "").lower() or
+            search_lower in (s.album or "").lower()
+        )]
+        need_scrape_list = [s for s in need_scrape_list if s in songs]
+
     # 默认按文件名排序
     songs.sort(key=lambda x: x.filename)
 
-    # 启动后台刮削线程
-    if threading.active_count() < 5:
-        t = threading.Thread(target=scrape_metadata_background, args=(need_scrape_list,), daemon=True)
-        t.start()
+    # 分页
+    total = len(songs)
+    if page_size > 0:
+        start = (page - 1) * page_size
+        end = start + page_size
+        songs = songs[start:end]
 
-    return songs
+    # 启动后台刮削线程（使用全局锁去重）
+    global _scrape_in_progress
+    with _scrape_lock:
+        if not _scrape_in_progress and need_scrape_list:
+            _scrape_in_progress = True
+            t = threading.Thread(target=scrape_metadata_background, args=(need_scrape_list,), daemon=True)
+            t.start()
+
+    return SongListResponse(
+        total=total,
+        page=page,
+        page_size=page_size if page_size > 0 else total,
+        songs=songs
+    )
 
 @app.get("/api/stream")
 def stream_music(path: str = Query(..., description="歌曲文件路径")):
@@ -411,10 +424,24 @@ def get_cover(path: str = Query(..., description="歌曲文件路径")):
     # 验证路径安全性
     safe_path = validate_and_safe_path(path)
     
-    # 1. 尝试读取文件内嵌
+    # 只读取一次音频文件，复用解析结果
+    artist = "未知艺术家"
+    title = os.path.splitext(os.path.basename(safe_path))[0]
+    
     try:
         audio = mutagen.File(safe_path)
         if audio:
+            # 提取元数据
+            if 'TIT2' in audio: 
+                title = str(audio['TIT2'])
+            elif 'title' in audio: 
+                title = str(audio['title'][0])
+            if 'TPE1' in audio: 
+                artist = str(audio['TPE1'])
+            elif 'artist' in audio: 
+                artist = str(audio['artist'][0])
+            
+            # 1. 尝试读取文件内嵌封面
             # MP3
             if hasattr(audio, 'tags'):
                 for key in audio.tags.keys():
@@ -429,25 +456,10 @@ def get_cover(path: str = Query(..., description="歌曲文件路径")):
                 pic = audio.pictures[0]
                 return StreamingResponse(BytesIO(pic.data), media_type=pic.mime)
     except Exception as e:
-        print(f"[警告] 读取内嵌封面失败: {e}")
-        pass
+        print(f"[警告] 读取音频文件失败: {e}")
 
-    # 2. 如果内嵌失败，尝试查找缓存文件
+    # 2. 如果内嵌封面不存在，尝试查找缓存封面
     try:
-        # 重新解析一下 Artist/Title 算 Hash
-        audio = mutagen.File(safe_path)  # 再读一次为了保险获取 Tag
-        artist = "未知艺术家"
-        title = os.path.splitext(os.path.basename(safe_path))[0]
-        if audio:
-            if 'TIT2' in audio: 
-                title = str(audio['TIT2'])
-            elif 'title' in audio: 
-                title = str(audio['title'][0])
-            if 'TPE1' in audio: 
-                artist = str(audio['TPE1'])
-            elif 'artist' in audio: 
-                artist = str(audio['artist'][0])
-        
         cache_name = get_cache_filename(artist, title)
         cached_cover = os.path.join(COVER_DIR, cache_name + ".jpg")
         
@@ -455,7 +467,6 @@ def get_cover(path: str = Query(..., description="歌曲文件路径")):
              return FileResponse(cached_cover)
     except Exception as e:
         print(f"[警告] 读取缓存封面失败: {e}")
-        pass
 
     # 3. 都没有，返回默认封面
     default_cover_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#334155">
@@ -468,6 +479,53 @@ def get_cover(path: str = Query(..., description="歌曲文件路径")):
         headers={"Cache-Control": "max-age=3600"}
     )
 
+@app.get("/api/lyrics")
+def get_lyrics(path: str = Query(..., description="歌曲文件路径")):
+    """
+    按需获取歌词内容
+    
+    Args:
+        path: 经过URL编码的音乐文件路径
+        
+    Returns:
+        JSON: { lyrics: str }
+    """
+    safe_path = validate_and_safe_path(path)
+    
+    # 1. 尝试读取同目录下的 .lrc 文件
+    lrc_path = os.path.splitext(safe_path)[0] + ".lrc"
+    if os.path.exists(lrc_path):
+        try:
+            with open(lrc_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return {"lyrics": f.read()}
+        except Exception as e:
+            print(f"[警告] 读取本地歌词失败: {e}")
+
+    # 2. 尝试读取缓存歌词
+    try:
+        artist = "未知艺术家"
+        title = os.path.splitext(os.path.basename(safe_path))[0]
+        audio = mutagen.File(safe_path)
+        if audio:
+            if 'TIT2' in audio: 
+                title = str(audio['TIT2'])
+            elif 'title' in audio: 
+                title = str(audio['title'][0])
+            if 'TPE1' in audio: 
+                artist = str(audio['TPE1'])
+            elif 'artist' in audio: 
+                artist = str(audio['artist'][0])
+        
+        cache_name = get_cache_filename(artist, title)
+        cached_lrc = os.path.join(LYRIC_DIR, cache_name + ".lrc")
+        if os.path.exists(cached_lrc):
+            with open(cached_lrc, 'r', encoding='utf-8') as f:
+                return {"lyrics": f.read()}
+    except Exception as e:
+        print(f"[警告] 读取缓存歌词失败: {e}")
+
+    return {"lyrics": ""}
+
 # 健康检查接口
 @app.get("/api/health")
 def health_check():
@@ -475,7 +533,7 @@ def health_check():
     return {
         "status": "healthy",
         "music_dir": MUSIC_DIR,
-        "cors_allowed_origins": ALLOWED_ORIGINS[:3] if len(ALLOWED_ORIGINS) > 3 else ALLOWED_ORIGINS,
+        "cors_allowed_origins_regex": ALLOWED_ORIGINS_REGEX,
         "timestamp": time.time()
     }
 
