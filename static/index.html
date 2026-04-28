@@ -47,7 +47,7 @@
         <div class="flex-1 flex overflow-hidden relative">
             
             <!-- 左侧：播放列表 -->
-            <aside class="w-1/4 min-w-[300px] glass-panel flex flex-col z-10 bg-slate-900/50">
+            <aside class="w-1/4 min-w-[250px] max-w-[450px] glass-panel flex flex-col z-10 bg-slate-900/50">
                 <div class="p-3 border-b border-slate-700/30 flex justify-between items-center">
                     <div class="text-sm text-slate-500 flex items-center gap-2">
                         <i class="ri-database-2-line"></i>
@@ -145,7 +145,7 @@
             </main>
 
             <!-- 右侧：详细信息 -->
-            <aside class="w-1/4 min-w-[250px] glass-panel border-l border-r-0 border-slate-700/50 flex flex-col p-6 z-10 bg-slate-900/60 backdrop-blur-md">
+            <aside class="w-1/4 min-w-[250px] max-w-[450px] glass-panel border-l border-r-0 border-slate-700/50 flex flex-col p-6 z-10 bg-slate-900/60 backdrop-blur-md">
                 <div class="flex items-center gap-2 text-slate-400 mb-6 pb-4 border-b border-white/5">
                     <i class="ri-information-line"></i>
                     <h2 class="text-xs font-bold uppercase tracking-widest">Track Info</h2>
@@ -174,11 +174,11 @@
                             </div>
                         </div>
                         
-                        <!-- 调试信息显示区域 -->
+                        <!-- 调试信息显示区域 
                         <div v-if="isFlac && isPlaying" class="bg-red-500/10 p-3 rounded-lg border border-red-500/30 text-xs font-mono text-red-300 animate-pulse">
                             <div class="font-bold mb-1"><i class="ri-bug-line"></i> FLAC 实时监控中</div>
                             <div>状态: {{ monitorStatus }}</div>
-                        </div>
+                        </div> -->
                     </div>
                 </div>
             </aside>
@@ -275,10 +275,27 @@
                 const STUCK_THRESHOLD = 6 // 500ms * 6 = 3秒，增加一点容错
                 const isFlac = computed(() => currentSong.value && currentSong.value.filename.toLowerCase().endsWith('.flac'))
 
+                const fetchLyricsForSong = async (song) => {
+                    if (!song) return
+                    try {
+                        const res = await fetch(`/api/lyrics?path=${encodeURIComponent(song.path)}`)
+                        const data = await res.json()
+                        if (data.lyrics) {
+                            song.lyrics = data.lyrics
+                            if (currentSong.value && currentSong.value.path === song.path) {
+                                parsedLyrics.value = parseLyrics(data.lyrics)
+                            }
+                        }
+                    } catch (e) {
+                        console.error("获取歌词失败:", e)
+                    }
+                }
+
                 const fetchSongs = () => {
                     fetch('/api/songs').then(res => res.json()).then(data => { 
-                        const oldPath = currentSong.value?.path 
-                        songs.value = data
+                        const oldPath = currentSong.value?.path
+                        const songList = data.songs || data
+                        songs.value = songList
                         
                         if (!currentSong.value && songs.value.length > 0) {
                             const randIdx = Math.floor(Math.random() * songs.value.length)
@@ -290,9 +307,8 @@
                                 if(newSongInfo.has_cover !== currentSong.value.has_cover) {
                                     currentSong.value.has_cover = newSongInfo.has_cover
                                 }
-                                if(newSongInfo.lyrics && !currentSong.value.lyrics) {
-                                     currentSong.value.lyrics = newSongInfo.lyrics
-                                     parsedLyrics.value = parseLyrics(newSongInfo.lyrics)
+                                if(newSongInfo.has_lyrics && !currentSong.value.lyrics) {
+                                    fetchLyricsForSong(currentSong.value)
                                 }
                             }
                         }
@@ -342,8 +358,10 @@
                     const elements = container.querySelectorAll('.song-item')
                     
                     for (let el of elements) {
-                        const songIndex = parseInt(el.dataset.index)
-                        const songInitial = getCurrentInitial(sortedSongs.value[songIndex])
+                        const songPath = el.dataset.path
+                        const song = sortedSongs.value.find(s => s.path === songPath)
+                        if (!song) continue
+                        const songInitial = getCurrentInitial(song)
                         const normalizedInitial = /^[A-Za-z]$/.test(songInitial) ? songInitial.toUpperCase() : '#'
                         if (normalizedInitial === letter) {
                             el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -370,12 +388,16 @@
                 const parseLyrics = (lrcText) => {
                     if (!lrcText) return []
                     const lines = lrcText.split('\n')
-                    const regex = /^\[(\d{2}):(\d{2}\.\d{2,3})\](.*)/
+                    // 支持多种格式：
+                    // [mm:ss.xx] [mm:ss.xxx] [mm:ss:xx] [mm：ss.xx]（全角冒号）
+                    // 也支持 [mm:ss] 不带毫秒
+                    const regex = /^\[(\d{2})[：:](\d{2}(?:[.:]\d{2,3})?)\](.*)/
                     const result = []
                     for (const line of lines) {
                         const match = line.match(regex)
                         if (match) {
-                            result.push({ time: parseInt(match[1])*60 + parseFloat(match[2]), text: match[3].trim() })
+                            const seconds = parseInt(match[1]) * 60 + parseFloat(match[2].replace('：', ':').replace('。', '.'))
+                            result.push({ time: seconds, text: match[3].trim() })
                         }
                     }
                     return result
@@ -384,7 +406,8 @@
                 const playSong = async (song) => {
                     if (currentSong.value && currentSong.value.path === song.path) return
                     
-                    // 重置监测
+                    // 重置监测和防递归标志
+                    isHandlingStuck = false
                     stopStuckMonitor()
                     monitorStatus.value = '初始化...'
 
@@ -393,6 +416,8 @@
                     
                     if (song.lyrics && song.lyrics.length > 10) {
                         parsedLyrics.value = parseLyrics(song.lyrics)
+                    } else if (song.has_lyrics) {
+                        fetchLyricsForSong(song)
                     }
                     
                     isPlaying.value = true
@@ -423,17 +448,21 @@
                     startStuckMonitor();
                 }
 
-                // --- 核心修复：原生事件监听 ---
+                // --- 防递归切歌标志 ---
+                let isHandlingStuck = false
+
                 const onAudioError = (e) => {
-                    const err = audioPlayer.value.error;
+                    const err = audioPlayer.value?.error;
                     console.error("FLAC监控: 原生Error事件触发", err);
-                    handleStuck("原生错误: " + (err ? err.code : 'unknown'));
+                    // 如果已经在处理卡死，不再递归触发
+                    if (!isHandlingStuck) {
+                        handleStuck("原生错误: " + (err ? err.code : 'unknown'));
+                    }
                 }
 
                 const onWaiting = () => {
                     if(isFlac.value && isPlaying.value) {
                          console.warn("FLAC监控: 缓冲区不足 (Waiting)...");
-                         // 这里不直接切歌，交给定时器去判断是否waiting太久
                     }
                 }
 
@@ -443,7 +472,7 @@
                     }
                 }
 
-                // --- 核心修复：更强力的定时监控 ---
+                // --- 更强力的定时监控 ---
                 const startStuckMonitor = () => {
                     stopStuckMonitor();
 
@@ -452,7 +481,6 @@
                     console.log("FLAC监控: 服务已启动");
                     monitorStatus.value = '运行中 (0)';
                     
-                    // 初始化时间
                     lastCheckTime = audioPlayer.value ? audioPlayer.value.currentTime : 0;
                     stuckCounter = 0;
 
@@ -460,7 +488,6 @@
                         const audio = audioPlayer.value;
                         if (!audio) return;
 
-                        // 1. 如果用户手动暂停了，不计数
                         if (audio.paused || !isPlaying.value) {
                             stuckCounter = 0;
                             monitorStatus.value = '暂停中';
@@ -470,18 +497,15 @@
                         const nowTime = audio.currentTime;
                         const timeDiff = Math.abs(nowTime - lastCheckTime);
 
-                        // 2. 判定逻辑：播放状态下，时间几乎没动
                         if (timeDiff < 0.1) {
                             stuckCounter++;
                             monitorStatus.value = `卡顿计数 ${stuckCounter}/${STUCK_THRESHOLD}`;
                             console.log(`FLAC监控: 检测到时间冻结 (${stuckCounter}/${STUCK_THRESHOLD}) 当前时间: ${nowTime}`);
                             
-                            // 3. 达到阈值 (3秒)
                             if (stuckCounter >= STUCK_THRESHOLD) {
                                 handleStuck("时间冻结超时");
                             }
                         } else {
-                            // 正常播放，重置计数器
                             if (stuckCounter > 0) {
                                 console.log("FLAC监控: 播放恢复正常");
                             }
@@ -493,20 +517,27 @@
                 }
 
                 const handleStuck = (reason) => {
+                    if (isHandlingStuck) return
+                    isHandlingStuck = true
+
                     console.error(`FLAC监控: 确认播放失败! 原因: ${reason}。正在强制切歌...`);
                     monitorStatus.value = '尝试恢复...';
                     stopStuckMonitor();
                     
-                    // 强制手段：先暂停，甚至卸载当前的 src，防止浏览器死锁
+                    // 先暂停，卸载 src 防止浏览器死锁
                     if(audioPlayer.value) {
                         audioPlayer.value.pause();
                         audioPlayer.value.removeAttribute('src'); 
                         audioPlayer.value.load();
                     }
 
-                    // 延时一点点切下一首
+                    // 延时切下一首（跳过单曲循环，强制切到下一首）
                     setTimeout(() => {
-                        nextSong(false); 
+                        const savedLoopMode = loopMode.value;
+                        loopMode.value = 0;
+                        nextSong(false);
+                        loopMode.value = savedLoopMode;
+                        isHandlingStuck = false
                     }, 100);
                 }
 
@@ -541,10 +572,10 @@
                 
                 const nextSong = (manual=false) => {
                     if(!songs.value.length) return
-                    if(loopMode.value===2 && !manual) { 
-                        // 如果是单曲循环且卡死，必须重载，否则死循环
-                        audioPlayer.value.load(); 
-                        audioPlayer.value.play(); 
+                    if(loopMode.value===2) { 
+                        // 单曲循环：直接重置时间重新播放，比 load()+play() 更可靠
+                        audioPlayer.value.currentTime = 0;
+                        audioPlayer.value.play();
                         return 
                     }
                     let nextIdx = 0; 
@@ -597,8 +628,14 @@
                 }
                 
                 const onEnded = () => {
-                    stopStuckMonitor(); 
-                    nextSong(false) 
+                    stopStuckMonitor();
+                    if (loopMode.value === 2) {
+                        // 单曲循环：重置时间并重新播放
+                        audioPlayer.value.currentTime = 0;
+                        audioPlayer.value.play();
+                        return
+                    }
+                    nextSong(false)
                 }
                 
                 const onSeek = () => {
