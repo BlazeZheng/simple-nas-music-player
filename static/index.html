@@ -39,8 +39,14 @@
                     光辉永恒没事瞎写的播放器
                 </h1>
             </div>
-            <div class="text-xs text-slate-500 font-mono bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
-                NAS LOCAL LIBRARY · {{ songs.length }} TRACKS
+            <div class="flex items-center gap-3">
+                <div v-if="fetchError" class="text-xs text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/30">
+                    {{ fetchError }}
+                    <button @click="fetchSongs" class="ml-1 underline hover:text-orange-200">重试</button>
+                </div>
+                <div class="text-xs text-slate-500 font-mono bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
+                    NAS LOCAL LIBRARY · {{ songs.length }} TRACKS
+                </div>
             </div>
         </header>
 
@@ -51,7 +57,8 @@
                 <div class="p-3 border-b border-slate-700/30 flex justify-between items-center">
                     <div class="text-sm text-slate-500 flex items-center gap-2">
                         <i class="ri-database-2-line"></i>
-                        <span v-if="songs.length === 0">正在扫描...</span>
+                        <span v-if="fetchError" class="text-orange-400">连接失败</span>
+                        <span v-else-if="songs.length === 0">正在扫描...</span>
                         <span v-else>{{ songs.length }} 首歌曲</span>
                     </div>
                     <div class="flex items-center gap-1">
@@ -126,10 +133,13 @@
                     </div>
                     
                     <div v-if="!currentSong" class="h-full flex flex-col items-center justify-center text-slate-600">
-                        <div class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4 animate-bounce">
-                            <i class="ri-disc-line text-4xl"></i>
+                        <div class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4" :class="fetchError ? '' : 'animate-bounce'">
+                            <i :class="loadingStuck ? 'ri-error-warning-line' : 'ri-disc-line'" class="text-4xl"></i>
                         </div>
-                        <p>正在读取 NAS 音乐库...</p>
+                        <p v-if="fetchError">{{ fetchError }}</p>
+                        <p v-else-if="songs.length === 0">正在读取 NAS 音乐库...</p>
+                        <p v-else>共 {{ songs.length }} 首歌曲</p>
+                        <button v-if="loadingStuck" @click="fetchSongs" class="mt-4 px-4 py-1 text-sm text-purple-400 border border-purple-400/30 rounded-full hover:bg-purple-400/10 transition-colors">重新连接</button>
                     </div>
 
                     <div v-else class="pb-[40vh] max-w-2xl mx-auto">
@@ -275,6 +285,9 @@
                 const STUCK_THRESHOLD = 6 // 500ms * 6 = 3秒，增加一点容错
                 const isFlac = computed(() => currentSong.value && currentSong.value.filename.toLowerCase().endsWith('.flac'))
 
+                const fetchError = ref('')
+                const loadingStuck = ref(false)
+
                 const fetchLyricsForSong = async (song) => {
                     if (!song) return
                     try {
@@ -292,7 +305,11 @@
                 }
 
                 const fetchSongs = () => {
-                    fetch('/api/songs').then(res => res.json()).then(data => { 
+                    fetchError.value = ''
+                    fetch('/api/songs').then(res => {
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                        return res.json()
+                    }).then(data => { 
                         const oldPath = currentSong.value?.path
                         const songList = data.songs || data
                         songs.value = songList
@@ -312,6 +329,10 @@
                                 }
                             }
                         }
+                    }).catch(err => {
+                        console.error("获取歌曲列表失败:", err)
+                        fetchError.value = '无法连接到服务器，请检查网络或稍后重试'
+                        loadingStuck.value = true
                     })
                 }
                 
@@ -416,8 +437,12 @@
                     
                     if (song.lyrics && song.lyrics.length > 10) {
                         parsedLyrics.value = parseLyrics(song.lyrics)
-                    } else if (song.has_lyrics) {
+                    } else if (!song.lyrics && song.has_lyrics) {
                         fetchLyricsForSong(song)
+                    }
+
+                    if (!song.has_lyrics || !song.has_cover) {
+                        fetch(`/api/scrape?path=${encodeURIComponent(song.path)}`).catch(() => {})
                     }
                     
                     isPlaying.value = true
@@ -442,7 +467,13 @@
                     duration.value = audioPlayer.value.duration; 
                     const playPromise = audioPlayer.value.play();
                     if (playPromise !== undefined) {
-                        playPromise.then(_ => { isPlaying.value = true; }).catch(error => { isPlaying.value = false; });
+                        playPromise.then(_ => { 
+                            isPlaying.value = true;
+                            fetchError.value = '';
+                        }).catch(error => { 
+                            isPlaying.value = false;
+                            console.warn("自动播放被浏览器阻止，点击播放按钮开始");
+                        });
                     }
                     // 启动FLAC监测
                     startStuckMonitor();
@@ -532,11 +563,13 @@
                     }
 
                     // 延时切下一首（跳过单曲循环，强制切到下一首）
+                    const savedLoopMode = loopMode.value
                     setTimeout(() => {
-                        const savedLoopMode = loopMode.value;
-                        loopMode.value = 0;
+                        if (savedLoopMode === 2) {
+                            loopMode.value = 0;
+                        }
                         nextSong(false);
-                        loopMode.value = savedLoopMode;
+                        loopMode.value = savedLoopMode
                         isHandlingStuck = false
                     }, 100);
                 }
@@ -726,11 +759,11 @@
                     sortBy, sortOrder, sortedSongs, indexLetters,
                     playSong, togglePlay, nextSong, prevSong, toggleLoop, toggleShuffle, 
                     onTimeUpdate, onLoadedMetadata, onEnded, onSeek, seekTo, formatTime, 
-                    displayCover, updateVolume, toggleMute, refreshList,
+                    displayCover, updateVolume, toggleMute, refreshList, fetchSongs,
                     setSort, scrollToLetter, getCurrentInitial, getLoopTitle,
                     seekForward, seekBackward, scrollToCurrentSong,
-                    // 新增的返回
-                    onAudioError, onWaiting, onStalled, monitorStatus, isFlac
+                    onAudioError, onWaiting, onStalled, monitorStatus, isFlac,
+                    fetchError, loadingStuck
                 }
             }
         }).mount('#app')
