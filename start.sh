@@ -10,10 +10,15 @@ pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 # 注意：Docker容器重启后，原本装好的包可能会消失（取决于容器类型），
 # 所以每次启动时运行一次安装命令是最保险的。pip会自动跳过已安装的包，不会浪费时间。
 echo "正在检查并安装依赖库..."
-pip install fastapi uvicorn mutagen requests pypinyin
+pip install -r requirements.txt
 
 # 4. 启动播放器
 echo "正在启动播放器..."
-# --host 0.0.0.0 允许外网访问
-# --reload 代码修改后自动重启（方便开发）
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# 通过环境变量 HOST/PORT/RELOAD 控制，默认 0.0.0.0:8000 无热重载
+UVICORN_HOST=${HOST:-0.0.0.0}
+UVICORN_PORT=${PORT:-8000}
+UVICORN_ARGS="--host $UVICORN_HOST --port $UVICORN_PORT"
+if [ "${RELOAD:-0}" = "1" ]; then
+    UVICORN_ARGS="$UVICORN_ARGS --reload"
+fi
+uvicorn main:app $UVICORN_ARGS
