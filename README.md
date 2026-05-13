@@ -53,6 +53,11 @@ docker run -d \
 - Cover Art: GET /api/cover?path=...
 - Metadata: GET /api/songs
 
+## Upgrade Content on 2026.05.13
+- Add centralized configuration management
+- Added SQLite database to store song lists, lyrics, covers, etc., improving loading speed
+- Refactored the scraping engine, added NetEase Cloud API as the primary engine, and retained the original lrc.cx as the backup engine
+- Fixed some bugs
 
 ## 2026-04-28 Upgrade Content：
 - Fixed CORS wildcard port invalidation issue
@@ -124,6 +129,12 @@ docker run -d \
 ### 🤝 致谢
 - 歌词与封面 API 由 Lrc.cx 提供支持。
 - 图标库使用 RemixIcon。
+
+## 2026.05.13 升级内容
+- 增加集中配置管理
+- 增加SQLite 数据库，存储歌曲列表、歌词、封面等，提升加载速度
+- 刮削引擎重构，增加网易云api作为主引擎，原lrc.cx作为备用引擎
+- 修复部分bug
 
 ## 2026.04.28 升级内容
 - 修复CORS 通配符端口无效问题
