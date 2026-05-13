@@ -48,11 +48,11 @@ docker run -d \
 - Frontend: Vue.js 3, Tailwind CSS
 - Audio Processing: Mutagen
 - Networking: Requests
-### 📡 API Usage
-- Stream: GET /api/stream?path=...
-- Cover Art: GET /api/cover?path=...
-- Metadata: GET /api/songs
 
+### 🤝 Acknowledgments
+- Lyrics and cover API are supported by netease & Lrc.cx.
+- The icon library uses RemixIcon.
+- 
 ## Upgrade Content on 2026.05.13
 - Add centralized configuration management
 - Added SQLite database to store song lists, lyrics, covers, etc., improving loading speed
@@ -127,7 +127,7 @@ docker run -d \
 - 音频处理: Mutagen
 - 网络请求: Requests
 ### 🤝 致谢
-- 歌词与封面 API 由 Lrc.cx 提供支持。
+- 歌词与封面 API 由 netease & Lrc.cx 提供支持。
 - 图标库使用 RemixIcon。
 
 ## 2026.05.13 升级内容
